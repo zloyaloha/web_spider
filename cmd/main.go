@@ -1,11 +1,11 @@
 package main
 
 import (
-	"log"
+	"fmt"
+	"os"
 	"web_spider/internal/app"
 	"web_spider/internal/config"
 )
-
 func main() {
 	config, err := config.LoadConfig("config.yaml")
 
@@ -13,20 +13,12 @@ func main() {
 		panic(err)
 	}
 
-	app, err := app.NewSpiderApp(config)
+	crawler := app.NewWikiCrawler(config)
 
-	if err != nil {
-		panic(err)
+	startURL := "https://en.wikipedia.org/wiki/Category:Sports"
+
+	if err := crawler.Crawl(startURL, 30000); err != nil {
+		fmt.Printf("Ошибка: %v\n", err)
+		os.Exit(1)
 	}
-
-	err = app.Run()
-
-	if err != nil {
-		panic(err)
-	}
-
-	log.Println("Spider succesfully run")
-
-	// queue := urlqueue.UrlQueue{}
-	// queue.ParseSitemap("https://matchtv.ru/sitemap.xml")
 }

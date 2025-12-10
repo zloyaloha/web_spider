@@ -22,10 +22,6 @@ func (q *URLQueue) Add(urlStr string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
-	if len(q.URLs) >= q.MaxPages {
-		return false
-	}
-
 	normalized := NormalizeURL(urlStr)
 	if !q.URLs[normalized] {
 		q.URLs[normalized] = true

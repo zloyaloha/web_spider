@@ -41,8 +41,6 @@ func NewMongoDB(config config.DBConfig) (*MongoDB, error) {
 		client:   client,
 		database: db,
 		documents: db.Collection(config.Collections.Documents),
-		spiderState: db.Collection(config.Collections.SpiderState),
-		spiderHistory: db.Collection(config.Collections.SpiderHistory),
 	}
 
 	if err := d.createIndexes(); err != nil {
@@ -54,35 +52,66 @@ func NewMongoDB(config config.DBConfig) (*MongoDB, error) {
 
 
 func (d *MongoDB) createIndexes() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
 
-	indexModel := mongo.IndexModel{
-		Keys: bson.D{{Key: "normalized_url", Value: 1}},
-		Options: options.Index().SetUnique(true),
-	}
-	_, err := d.documents.Indexes().CreateOne(ctx, indexModel)
-	if err != nil && err.Error() != "index already exists" {
-		log.Printf("Ошибка при создании индекса URL: %v", err)
-	}
+    indexModel := mongo.IndexModel{
+        Keys: bson.D{{Key: "normalized_url", Value: 1}},
+        Options: options.Index().SetUnique(true),
+    }
+    _, err := d.documents.Indexes().CreateOne(ctx, indexModel)
+    if err != nil && err.Error() != "index already exists" {
+        log.Printf("Ошибка при создании индекса URL: %v", err)
+    }
 
-	indexModel = mongo.IndexModel{
-		Keys: bson.D{{Key: "source", Value: 1}},
-		Options: options.Index().SetUnique(true),
-	}
-	_, err = d.spiderState.Indexes().CreateOne(ctx, indexModel)
-	if err != nil && err.Error() != "index already exists" {
-		log.Printf("Ошибка при создании индекса source: %v", err)
-	}
+    indexModel = mongo.IndexModel{
+        Keys: bson.D{{Key: "last_scraped", Value: 1}}, // 1 = Ascending
+    }
+    _, err = d.documents.Indexes().CreateOne(ctx, indexModel)
+    if err != nil && err.Error() != "index already exists" {
+        log.Printf("Ошибка при создании индекса last_scraped: %v", err)
+    }
 
-	indexModel = mongo.IndexModel{
-		Keys: bson.D{{Key: "timestamp", Value: -1}},
-	}
-	_, err = d.spiderHistory.Indexes().CreateOne(ctx, indexModel)
-	if err != nil {
-		log.Printf("Ошибка при создании индекса timestamp: %v", err)
-	}
-	return nil
+    return nil
+}
+
+func (d *MongoDB) GetStaleDocuments(thresholdHours int, limit int) ([]string, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+    defer cancel()
+
+    cutoff := time.Now().Add(-time.Duration(thresholdHours) * time.Hour).Unix()
+
+    filter := bson.M{
+        "last_scraped": bson.M{"$lt": cutoff},
+    }
+
+    opts := options.Find().
+        SetProjection(bson.M{"normalized_url": 1}).
+        SetLimit(int64(limit))
+
+    cursor, err := d.documents.Find(ctx, filter, opts)
+    if err != nil {
+        return nil, fmt.Errorf("ошибка поиска устаревших документов: %v", err)
+    }
+    defer cursor.Close(ctx)
+
+    var urls []string
+    type UrlOnly struct {
+        NormalizedURL string `bson:"normalized_url"`
+    }
+
+    for cursor.Next(ctx) {
+        var res UrlOnly
+        if err := cursor.Decode(&res); err == nil {
+            urls = append(urls, res.NormalizedURL)
+        }
+    }
+
+    if err := cursor.Err(); err != nil {
+        return nil, err
+    }
+
+    return urls, nil
 }
 
 func (d *MongoDB) GetDocument(normalizedURL string) (*models.Document, error) {
@@ -130,5 +159,70 @@ func (d *MongoDB) SaveDocument(doc *models.Document) error {
 	}
 
 	_, err := d.documents.UpdateOne(ctx, filter, update, opts)
+	return err
+}
+
+func (d *MongoDB) GetSourceStats(source string) (map[string]interface{}, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.D{{Key: "source", Value: source}}}},
+		bson.D{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: nil},
+			{Key: "total_documents", Value: bson.D{{Key: "$sum", Value: 1}}},
+			{Key: "avg_content_length", Value: bson.D{{Key: "$avg", Value: "$content_length"}}},
+			{Key: "max_scraped_count", Value: bson.D{{Key: "$max", Value: "$scraped_count"}}},
+			{Key: "valid_documents", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{"$is_valid", 1, 0}}}}}},
+		}}},
+	}
+
+	cursor, err := d.documents.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var results []map[string]interface{}
+	if err := cursor.All(ctx, &results); err != nil {
+		return nil, err
+	}
+
+	if len(results) == 0 {
+		return make(map[string]interface{}), nil
+	}
+
+	return results[0], nil
+}
+
+func (d *MongoDB) SaveSpiderState(state *models.SpiderState) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	opts := options.Update().SetUpsert(true)
+	filter := bson.M{"source": state.Source}
+	update := bson.M{"$set": state}
+
+	_, err := d.spiderState.UpdateOne(ctx, filter, update, opts)
+	return err
+}
+
+func (d *MongoDB) GetSpiderState(source string) (*models.SpiderState, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var state models.SpiderState
+	err := d.spiderState.FindOne(ctx, bson.M{"source": source}).Decode(&state)
+	if err == mongo.ErrNoDocuments {
+		return nil, nil
+	}
+	return &state, err
+}
+
+func (d *MongoDB) SaveSpiderHistory(history *models.SpiderHistory) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := d.spiderHistory.InsertOne(ctx, history)
 	return err
 }
