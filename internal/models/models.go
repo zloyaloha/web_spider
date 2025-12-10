@@ -26,7 +26,7 @@ type Document struct {
 	ErrorMessage  string    `bson:"error_message,omitempty"`
 }
 
-type CrawlState struct {
+type SpiderState struct {
 	ID                string    `bson:"_id"`
 	Source            string    `bson:"source"`
 	LastProcessedURL  string    `bson:"last_processed_url"`
@@ -38,11 +38,11 @@ type CrawlState struct {
 	LastResumeTime    int64     `bson:"last_resume_time"`
 }
 
-type CrawlHistory struct {
+type SpiderHistory struct {
 	ID            string `bson:"_id"`
 	Source        string `bson:"source"`
 	URL           string `bson:"url"`
-	Status        string `bson:"status"` // success, error, skipped, unchanged
+	Status        string `bson:"status"`
 	StatusCode    int    `bson:"status_code"`
 	ContentHash   string `bson:"content_hash"`
 	Timestamp     int64  `bson:"timestamp"`
