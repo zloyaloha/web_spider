@@ -40,10 +40,15 @@ int main() {
     auto stemmer = std::make_unique<PorterStemmer>();
     auto tokenizer = std::make_shared<Tokenizer>(std::move(stemmer));
 
-    SimpleHashMap index;
+    // SimpleHashMap<int> index;
+    // std::vector<std::string> urls;
+
+    // Indexator indexator(index, urls, tokenizer);
+
+    SimpleHashMap<PostingEntry> index;
     std::vector<std::string> urls;
 
-    Indexator indexator(index, urls, tokenizer);
+    TFIDFIndexator indexator(index, urls, tokenizer);
     int counter = 0;
     for (auto&& doc : cursor) {
         bsoncxx::document::element url_ele = doc["normalized_url"];
@@ -56,7 +61,6 @@ int main() {
         indexator.addDocument(url_view.data(), content_view.data());
         std::cout << counter++ << std::endl;
         std::cout << url_view << std::endl;
-        break;
     }
     auto end_time = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end_time - start_time;
@@ -66,17 +70,18 @@ int main() {
     std::cout << "Объем данных: " << total_bytes / 1024.0 / 1024.0 << " MB\n";
     std::cout << "Скорость обработки: " << speed_kb_s << " KB/s\n";
 
-    Searcher searcher(index, urls, tokenizer);
+    TFIDFSearcher searcher(index, urls, tokenizer);
     while (true) {
         std::string request;
-        std::cin >> request;
+        std::getline(std::cin, request);
 
         start_time = std::chrono::high_resolution_clock::now();
         auto result = searcher.findDocument(request);
         end_time = std::chrono::high_resolution_clock::now();
         duration = end_time - start_time;
 
-        for (int i = 0; i < result.size(); ++i) {
+        std::cout << "Топ 5 результатов" << std::endl;
+        for (int i = 0; i < 5 && i < result.size(); ++i) {
             std::cout << result[i] << '\n';
         }
         std::cout << "Время запроса: " << duration.count() << " сек\n";

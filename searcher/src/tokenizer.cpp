@@ -6,6 +6,29 @@ Tokenizer::Tokenizer(std::unique_ptr<IStemmer> stemmer) : stemmer(std::move(stem
 
 Tokenizer::Tokenizer() : stemmer(std::make_unique<DummyStemmer>()) {}
 
+std::vector<std::string> Tokenizer::getRawTokens(const std::string_view& query) {
+    std::vector<std::string> rawTokens;
+    std::string currentToken = "";
+    for (size_t i = 0; i < query.length(); ++i) {
+        char c = query[i];
+        bool is_op_char = (c == '(' || c == ')' || c == '!' || c == '&' || c == '|');
+        if (c == ' ' || is_op_char) {
+            if (!currentToken.empty()) {
+                rawTokens.push_back(currentToken);
+                currentToken.clear();
+            }
+            if (is_op_char) {
+                rawTokens.push_back(std::string(1, c));
+            }
+        } else {
+            currentToken += c;
+        }
+    }
+    if (!currentToken.empty()) rawTokens.push_back(currentToken);
+
+    return rawTokens;
+}
+
 void Tokenizer::tokenize(const std::string_view& text) {
     tokens.clear();
     tokens.reserve(text.size() / 6);
@@ -76,7 +99,7 @@ std::vector<std::string> Tokenizer::getTokens() const { return tokens; }
 
 size_t Tokenizer::tokensAmount() const { return tokens.size(); }
 
-double Tokenizer::avgTokenLen() const { return double(total_len) / tokens.size(); }
+double Tokenizer::avgTokenLen() const { return tokens.size() == 0 ? 0 : double(total_len) / tokens.size(); }
 
 std::string DummyStemmer::stem(std::string& word) { return word; }
 
@@ -96,7 +119,7 @@ int PorterStemmer::getMeasure(int limit) const {
 
     for (int i = 0; i <= limit; ++i) {
         char c = word[i];
-        if (isVowel(c)) {
+        if (isVowel(i)) {
             vc = false;
         } else {
             if (!vc) {
@@ -228,6 +251,19 @@ void PorterStemmer::step2() {
     if (replaceSuffixIfMeasure(word, "abli", "able", 0).size() < word.size()) return;
     if (replaceSuffixIfMeasure(word, "alli", "al", 0).size() < word.size()) return;
     if (replaceSuffixIfMeasure(word, "entli", "ent", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "eli", "e", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ousli", "ous", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ization", "ize", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ation", "ate", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ator", "ate", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "alism", "al", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "iveness", "ive", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "fulness", "ful", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ousness", "ous", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "aliti", "al", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "iviti", "ive", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "biliti", "ble", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "logi", "log", 0).size() < word.size()) return;
 }
 
 void PorterStemmer::step3() {
@@ -237,6 +273,7 @@ void PorterStemmer::step3() {
     if (replaceSuffixIfMeasure(word, "ative", "", 0).size() < word.size()) return;
     if (replaceSuffixIfMeasure(word, "alize", "al", 0).size() < word.size()) return;
     if (replaceSuffixIfMeasure(word, "iciti", "ic", 0).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ical", "ic", 0).size() < word.size()) return;
     if (replaceSuffixIfMeasure(word, "ful", "", 0).size() < word.size()) return;
     if (replaceSuffixIfMeasure(word, "ness", "", 0).size() < word.size()) return;
 }
@@ -249,15 +286,29 @@ void PorterStemmer::step4() {
     if (replaceSuffixIfMeasure(word, "ence", "", 1).size() < word.size()) return;
     if (replaceSuffixIfMeasure(word, "er", "", 1).size() < word.size()) return;
     if (replaceSuffixIfMeasure(word, "ic", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "able", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ible", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ant", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ement", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ment", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ent", "", 1).size() < word.size()) return;
 
     if (endsWith(word, "ion")) {
-        j = (int)word.size() - 4;  // Стемма без "ion"
+        j = (int)word.size() - 4;
         if (m_condition(1) && (word[j] == 's' || word[j] == 't')) {
             word.resize(word.size() - 3);
             end -= 3;
             return;
         }
     }
+
+    if (replaceSuffixIfMeasure(word, "ou", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ism", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ate", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "iti", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ous", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ive", "", 1).size() < word.size()) return;
+    if (replaceSuffixIfMeasure(word, "ize", "", 1).size() < word.size()) return;
 }
 
 void PorterStemmer::step5() {

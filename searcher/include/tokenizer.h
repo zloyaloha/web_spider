@@ -64,7 +64,8 @@ private:
 public:
     Tokenizer(std::unique_ptr<IStemmer> stemmer);
     Tokenizer();
-    void tokenize(const std::string_view& text);
+    virtual void tokenize(const std::string_view& text);
+    virtual std::vector<std::string> getRawTokens(const std::string_view& text);
 
     std::vector<std::string> getTokens() const;
     size_t tokensAmount() const;
