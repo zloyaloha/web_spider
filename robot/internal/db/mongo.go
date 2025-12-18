@@ -65,7 +65,7 @@ func (d *MongoDB) createIndexes() error {
     }
 
     indexModel = mongo.IndexModel{
-        Keys: bson.D{{Key: "last_scraped", Value: 1}}, // 1 = Ascending
+        Keys: bson.D{{Key: "last_scraped", Value: 1}},
     }
     _, err = d.documents.Indexes().CreateOne(ctx, indexModel)
     if err != nil && err.Error() != "index already exists" {
@@ -143,86 +143,67 @@ func (d *MongoDB) SaveDocument(doc *models.Document) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	opts := options.Update().SetUpsert(true)
 	filter := bson.M{"normalized_url": doc.NormalizedURL}
 
-	var updateDoc bson.M
-	data, _ := bson.Marshal(doc)
-	bson.Unmarshal(data, &updateDoc)
-
-	delete(updateDoc, "scraped_count")
-	delete(updateDoc, "_id")
-
-	update := bson.M{
-		"$set": updateDoc,
-		"$inc": bson.M{"scraped_count": 1},
+	var existing struct {
+		ContentHash string `bson:"content_hash"`
 	}
+	err := d.documents.FindOne(ctx, filter, options.FindOne().SetProjection(bson.M{"content_hash": 1})).Decode(&existing)
 
-	_, err := d.documents.UpdateOne(ctx, filter, update, opts)
-	return err
-}
-
-func (d *MongoDB) GetSourceStats(source string) (map[string]interface{}, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	pipeline := mongo.Pipeline{
-		bson.D{{Key: "$match", Value: bson.D{{Key: "source", Value: source}}}},
-		bson.D{{Key: "$group", Value: bson.D{
-			{Key: "_id", Value: nil},
-			{Key: "total_documents", Value: bson.D{{Key: "$sum", Value: 1}}},
-			{Key: "avg_content_length", Value: bson.D{{Key: "$avg", Value: "$content_length"}}},
-			{Key: "max_scraped_count", Value: bson.D{{Key: "$max", Value: "$scraped_count"}}},
-			{Key: "valid_documents", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{"$is_valid", 1, 0}}}}}},
-		}}},
-	}
-
-	cursor, err := d.documents.Aggregate(ctx, pipeline)
-	if err != nil {
-		return nil, err
-	}
-	defer cursor.Close(ctx)
-
-	var results []map[string]interface{}
-	if err := cursor.All(ctx, &results); err != nil {
-		return nil, err
-	}
-
-	if len(results) == 0 {
-		return make(map[string]interface{}), nil
-	}
-
-	return results[0], nil
-}
-
-func (d *MongoDB) SaveSpiderState(state *models.SpiderState) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+	var update bson.M
 	opts := options.Update().SetUpsert(true)
-	filter := bson.M{"source": state.Source}
-	update := bson.M{"$set": state}
 
-	_, err := d.spiderState.UpdateOne(ctx, filter, update, opts)
-	return err
-}
-
-func (d *MongoDB) GetSpiderState(source string) (*models.SpiderState, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	var state models.SpiderState
-	err := d.spiderState.FindOne(ctx, bson.M{"source": source}).Decode(&state)
 	if err == mongo.ErrNoDocuments {
-		return nil, nil
+		doc.FirstScraped = time.Now().Unix()
+		update = bson.M{
+			"$set": bson.M{
+				"normalized_url": doc.NormalizedURL,
+				"title":          doc.Title,
+				"html_content":   doc.HTMLContent,
+				"content_hash":   doc.ContentHash,
+				"content_length": len(doc.HTMLContent),
+				"first_scraped":  doc.FirstScraped,
+				"last_scraped":   doc.LastScraped,
+				"last_modified":  doc.LastScraped,
+				"status_code":    doc.StatusCode,
+				"is_valid":       doc.IsValid,
+				"error_message":  doc.ErrorMessage,
+			},
+			"$inc": bson.M{"scraped_count": 1},
+		}
+
+	} else if err == nil {
+		if existing.ContentHash == doc.ContentHash {
+			update = bson.M{
+				"$set": bson.M{
+					"last_scraped":  doc.LastScraped,
+					"status_code":   doc.StatusCode,
+					"is_valid":      doc.IsValid,
+					"error_message": doc.ErrorMessage,
+				},
+				"$inc": bson.M{"scraped_count": 1},
+			}
+		} else {
+			update = bson.M{
+				"$set": bson.M{
+					"title":          doc.Title,
+					"html_content":   doc.HTMLContent,
+					"content_hash":   doc.ContentHash,
+					"content_length": len(doc.HTMLContent),
+					"last_scraped":   doc.LastScraped,
+					"last_modified":  time.Now().Unix(),
+					"status_code":    doc.StatusCode,
+					"is_valid":       doc.IsValid,
+					"error_message":  doc.ErrorMessage,
+				},
+				"$inc": bson.M{"scraped_count": 1},
+			}
+		}
+
+	} else {
+		return fmt.Errorf("ошибка поиска документа: %w", err)
 	}
-	return &state, err
-}
 
-func (d *MongoDB) SaveSpiderHistory(history *models.SpiderHistory) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := d.spiderHistory.InsertOne(ctx, history)
+	_, err = d.documents.UpdateOne(ctx, filter, update, opts)
 	return err
 }

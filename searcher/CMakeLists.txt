@@ -15,12 +15,14 @@ FetchContent_Declare(
   URL https://github.com/google/googletest/archive/v1.14.0.zip
 )
 FetchContent_MakeAvailable(googletest)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(GUMBO REQUIRED gumbo)
 
-add_library(search_lib src/tokenizer.cpp src/searcher.cpp)
-target_include_directories(search_lib PUBLIC include/)
+add_library(search_lib src/tokenizer.cpp src/searcher.cpp src/db_downloader.cpp)
+target_include_directories(search_lib PUBLIC include/ ${GUMBO_INCLUDE_DIRS})
+target_link_libraries(search_lib PRIVATE mongo::mongocxx_shared mongo::bsoncxx_shared ${GUMBO_LDFLAGS})
 
 add_executable(main lab3/main.cpp)
-target_link_libraries(main PRIVATE mongo::mongocxx_shared mongo::bsoncxx_shared)
 target_link_libraries(main PUBLIC search_lib)
 
 add_executable(doc_searcher lab3/searcher.cpp)
@@ -32,6 +34,7 @@ add_executable(unit_tests
     tests/test_set_logic.cpp
     tests/test_indexator.cpp
     tests/test_searcher.cpp
+    tests/test_mapped_index.cpp
 )
 
 target_link_libraries(unit_tests

@@ -1,5 +1,16 @@
 #include "searcher.h"
 
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <iostream>
+#include <stdexcept>
 #include <string_view>
 
 #include "tokenizer.h"
@@ -86,7 +97,7 @@ std::vector<std::string> ISearcher::findDocument(const std::string& query) {
 
     auto rpn = sortingStation(tokens);
 
-    auto docIds = evaluate(rpn, (int)urls.size());
+    auto docIds = evaluate(rpn, source->getTotalDocs());
 
     if (docIds.empty()) return {};
 
@@ -149,7 +160,8 @@ std::vector<std::string> ISearcher::parseQuery(const std::string& query) {
     return processedTokens;
 }
 
-ISearcher::ISearcher(std::vector<std::string>& urls, std::shared_ptr<Tokenizer> tokenizer) : urls(urls), tokenizer(tokenizer) {}
+ISearcher::ISearcher(std::shared_ptr<IIndexSource> src, std::shared_ptr<Tokenizer> tok)
+    : source(std::move(src)), tokenizer(std::move(tok)) {}
 
 std::vector<std::string> ISearcher::sortingStation(const std::vector<std::string>& tokens) {
     std::vector<std::string> outputQueue;
@@ -183,132 +195,114 @@ std::vector<std::string> ISearcher::sortingStation(const std::vector<std::string
     return outputQueue;
 }
 
-Searcher::Searcher(SimpleHashMap<int>& index, std::vector<std::string>& urls, std::shared_ptr<Tokenizer> tokenizer)
-    : ISearcher(urls, tokenizer), index(index) {}
-
-std::vector<int> Searcher::fetchDocIds(const std::string& term) {
-    auto* vec = index.find(term);
-    if (vec) return *vec;
-    return {};
-}
-
-std::vector<std::string> Searcher::processResults(const std::vector<int>& docIds, const std::vector<std::string>& terms) {
-    std::vector<std::string> result_urls;
-    for (int id : docIds) {
-        if (id >= 0 && id < urls.size()) {
-            result_urls.push_back(urls[id]);
-        }
-    }
-    return result_urls;
-}
-
-TFIDFSearcher::TFIDFSearcher(SimpleHashMap<PostingEntry>& index, std::vector<std::string>& urls,
-                             std::shared_ptr<Tokenizer> tokenizer)
-    : index(index), ISearcher(urls, tokenizer) {}
-
-std::vector<int> TFIDFSearcher::fetchDocIds(const std::string& term) {
-    auto* node = index.getNode(term);
-    if (!node) return {};
+std::vector<int> ISearcher::fetchDocIds(const std::string& term) {
+    std::vector<TermInfo> postings = source->getPostings(term);
 
     std::vector<int> ids;
-    for (const auto& entry : node->postings) {
+    ids.reserve(postings.size());
+
+    for (const auto& entry : postings) {
         ids.push_back(entry.doc_id);
     }
     return ids;
 }
 
-std::vector<std::pair<int, double>> TFIDFSearcher::rankResults(const std::vector<int>& doc_ids,
-                                                               const std::vector<std::string>& terms) {
-    int total_docs = (int)urls.size();
+BinarySearcher::BinarySearcher(std::shared_ptr<IIndexSource> src, std::shared_ptr<Tokenizer> tok) : ISearcher(src, tok) {}
 
-    std::vector<double> scores(total_docs, 0.0);
+std::vector<std::string> BinarySearcher::processResults(const std::vector<int>& docIds, const std::vector<std::string>& terms) {
+    std::vector<std::string> result_urls;
+    result_urls.reserve(docIds.size());
 
-    std::vector<bool> is_relevant(total_docs, false);
-    for (int id : doc_ids) {
-        if (id >= 0 && id < total_docs) {
-            is_relevant[id] = true;
+    for (int id : docIds) {
+        std::string url = source->getUrl(id);
+        if (!url.empty()) {
+            result_urls.push_back(url);
         }
     }
+    return result_urls;
+}
 
-    for (const std::string& term : terms) {
-        HashNode<PostingEntry>* node = index.getNode(term);
-        if (!node) continue;
+TFIDFSearcher::TFIDFSearcher(std::shared_ptr<IIndexSource> src, std::shared_ptr<Tokenizer> tok) : ISearcher(src, tok) {}
 
-        double idf = std::log((double)total_docs / (1 + node->document_frequency));
+std::vector<std::pair<int, double>> TFIDFSearcher::rankResults(const std::vector<int>& doc_ids,
+                                                               const std::vector<std::string>& terms) {
+    int N = source->getTotalDocs();
+    std::vector<double> scores(N, 0.0);
 
-        for (const auto& entry : node->postings) {
-            if (entry.doc_id >= 0 && entry.doc_id < total_docs && is_relevant[entry.doc_id]) {
-                double tf = (double)entry.term_frequency;
-                scores[entry.doc_id] += tf * idf;
+    std::vector<bool> isRelevant(N, false);
+    for (int id : doc_ids) isRelevant[id] = true;
+
+    for (const auto& term : terms) {
+        auto postings = source->getPostings(term);
+        if (postings.empty()) continue;
+
+        double idf = std::log((double)N / (1 + postings.size()));
+
+        for (const auto& entry : postings) {
+            if (entry.doc_id < N && isRelevant[entry.doc_id]) {
+                scores[entry.doc_id] += (double)entry.tf * idf;
             }
         }
     }
 
-    std::vector<std::pair<int, double>> sorted_results;
-    sorted_results.reserve(doc_ids.size());
-
+    std::vector<std::pair<int, double>> ranked;
     for (int id : doc_ids) {
-        if (id >= 0 && id < total_docs) {
-            sorted_results.push_back({id, scores[id]});
-        }
+        ranked.push_back({id, scores[id]});
     }
 
-    std::sort(sorted_results.begin(), sorted_results.end(),
-              [](const std::pair<int, double>& a, const std::pair<int, double>& b) { return a.second > b.second; });
-
-    return sorted_results;
+    std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+    return ranked;
 }
 
-IIndexator::IIndexator(std::vector<std::string>& urls, std::shared_ptr<Tokenizer> tokenizer)
-    : urls(urls), tokenizer(std::move(tokenizer)) {}
+IIndexator::IIndexator(std::shared_ptr<RamIndexSource> src, std::shared_ptr<Tokenizer> tok)
+    : source(src), tokenizer(std::move(tok)) {}
 
-Indexator::Indexator(SimpleHashMap<int>& index, std::vector<std::string>& urls, std::shared_ptr<Tokenizer> tokenizer)
-    : index(index), IIndexator(urls, std::move(tokenizer)) {}
+BinaryIndexator::BinaryIndexator(std::shared_ptr<RamIndexSource> src, std::shared_ptr<Tokenizer> tok)
+    : IIndexator(src, std::move(tok)) {}
 
-void Indexator::addDocument(const std::string_view& url_view, const std::string_view& doc_view) {
-    int doc_id = (int)urls.size();
-    urls.emplace_back(url_view);
+void BinaryIndexator::addDocument(const std::string_view& url_view, const std::string_view& doc_view) {
+    auto ramSource = std::static_pointer_cast<RamIndexSource>(source);
+
+    uint32_t doc_id = ramSource->getTotalDocs();
+
+    ramSource->urls.emplace_back(url_view);
 
     tokenizer->tokenize(doc_view);
     std::vector<std::string> tokens = tokenizer->getTokens();
 
     for (const std::string& token : tokens) {
-        std::vector<int>& postings = index.get(token);
+        std::vector<TermInfo>& postings = ramSource->index.get(token);
 
-        if (postings.empty() || postings.back() != doc_id) {
-            postings.push_back(doc_id);
+        if (postings.empty() || postings.back().doc_id != doc_id) {
+            postings.push_back({doc_id, 1});
         }
     }
 }
 
-TFIDFIndexator::TFIDFIndexator(SimpleHashMap<PostingEntry>& index, std::vector<std::string>& urls,
-                               std::shared_ptr<Tokenizer> tokenizer)
-    : index(index), IIndexator(urls, std::move(tokenizer)) {}
+TFIDFIndexator::TFIDFIndexator(std::shared_ptr<RamIndexSource> src, std::shared_ptr<Tokenizer> tok)
+    : IIndexator(src, std::move(tok)) {}
 
 void TFIDFIndexator::addDocument(const std::string_view& url_view, const std::string_view& doc_view) {
-    int doc_id = (int)urls.size();
-    urls.emplace_back(url_view);
+    int doc_id = source->getTotalDocs();
+    source->urls.emplace_back(url_view);
 
     tokenizer->tokenize(doc_view);
     std::vector<std::string> tokens = tokenizer->getTokens();
 
-    SimpleHashMap<int> term_positions_map;
-    for (int i = 0; i < tokens.size(); ++i) {
-        term_positions_map.get(tokens[i]).push_back(i);
+    std::unordered_map<std::string, int> local_tf;
+    for (const auto& token : tokens) {
+        local_tf[token]++;
     }
 
-    term_positions_map.traverse([&](const std::string& term, const std::vector<int>& positions) {
-        HashNode<PostingEntry>* node = index.getNode(term);
+    for (const auto& [term, tf] : local_tf) {
+        std::vector<TermInfo>& postings = source->index.get(term);
 
-        PostingEntry entry;
+        TermInfo entry;
         entry.doc_id = doc_id;
-        entry.term_frequency = (int)positions.size();
-        entry.positions = positions;
+        entry.tf = tf;
 
-        node->postings.push_back(entry);
-
-        node->document_frequency++;
-    });
+        postings.push_back(entry);
+    }
 }
 
 std::vector<std::string> TFIDFSearcher::processResults(const std::vector<int>& docIds, const std::vector<std::string>& terms) {
@@ -316,7 +310,195 @@ std::vector<std::string> TFIDFSearcher::processResults(const std::vector<int>& d
 
     std::vector<std::string> result_urls;
     for (const auto& pair : ranked) {
-        result_urls.push_back(urls[pair.first]);
+        result_urls.push_back(source->getUrl(pair.first));
     }
     return result_urls;
+}
+
+void RamIndexSource::dump(const std::string& filename) {
+    std::ofstream ofs(filename, std::ios::binary);
+    if (!ofs) throw std::runtime_error("Cannot open file for writing");
+
+    std::vector<std::pair<std::string, std::vector<TermInfo>>> sorted_index;
+    index.traverse([&](const std::string& term, const std::vector<TermInfo>& docs) { sorted_index.push_back({term, docs}); });
+
+    std::sort(sorted_index.begin(), sorted_index.end(),
+              [](const auto& a, const auto& b) { return std::hash<std::string>{}(a.first) < std::hash<std::string>{}(b.first); });
+
+    BinaryFormat::Header header;
+    header.magic = BinaryFormat::MAGIC;
+    header.version = 2;
+    header.num_docs = (uint32_t)urls.size();
+    header.num_terms = (uint32_t)sorted_index.size();
+
+    // храним все всё в следующем формате
+    // [header] [[card_1][card_2]..[card_n]] [[token_1][token_2]..[token_n]] [[p_list_1][p_list_2]..[p_list_3]]
+    // p_list_n == [[doc_id, token_freq]...]
+    // card_n хранит в себе hash токена, offset на токен, offset на posting_list и размер
+    // posting_list сможем делать бинарный поиск
+
+    ofs.write(reinterpret_cast<char*>(&header), sizeof(header));
+
+    for (const auto& url : urls) {
+        uint32_t len = (uint32_t)url.size();
+        ofs.write(reinterpret_cast<char*>(&len), sizeof(len));
+        ofs.write(url.data(), len);
+    }
+
+    uint64_t dir_start = ofs.tellp();
+    uint64_t dir_size = sorted_index.size() * sizeof(BinaryFormat::TermEntry);
+    uint64_t term_pool_offset = dir_start + dir_size;
+    uint64_t current_term_offset = term_pool_offset;
+
+    uint64_t term_pool_size = 0;
+    for (const auto& p : sorted_index) {
+        term_pool_size += p.first.size() + 1;
+    }
+
+    uint64_t data_pool_offset = term_pool_offset + term_pool_size;
+    uint64_t current_data_offset = data_pool_offset;
+
+    for (const auto& [term, docs] : sorted_index) {
+        BinaryFormat::TermEntry entry;
+        entry.term_hash = std::hash<std::string>{}(term);
+        entry.term_offset = current_term_offset;
+        entry.data_offset = current_data_offset;
+        entry.doc_count = (uint32_t)docs.size();
+
+        ofs.write(reinterpret_cast<char*>(&entry), sizeof(entry));
+
+        current_term_offset += term.size() + 1;
+        current_data_offset += docs.size() * sizeof(int) * 2;
+    }
+
+    for (const auto& [term, docs] : sorted_index) {
+        ofs.write(term.c_str(), term.size() + 1);
+    }
+
+    for (const auto& [term, docs] : sorted_index) {
+        for (const auto posting_entry : docs) {
+            ofs.write(reinterpret_cast<const char*>(&posting_entry.doc_id), sizeof(uint32_t));
+            ofs.write(reinterpret_cast<const char*>(&posting_entry.tf), sizeof(uint32_t));
+        }
+    }
+
+    ofs.close();
+}
+
+// MappedIndexSource implementation
+MappedIndexSource::~MappedIndexSource() {
+    if (map_addr && map_addr != MAP_FAILED) {
+        munmap((void*)map_addr, file_size);
+        map_addr = nullptr;
+    }
+    if (fd != -1) {
+        close(fd);
+        fd = -1;
+    }
+    term_directory = nullptr;
+    num_terms = 0;
+}
+
+void MappedIndexSource::load(const std::string& filename, int expected_version) {
+    fd = open(filename.c_str(), O_RDONLY);
+    if (fd == -1) throw std::runtime_error("Cannot open index file");
+
+    struct stat sb;
+    if (fstat(fd, &sb) == -1) {
+        close(fd);
+        fd = -1;
+        throw std::runtime_error("Cannot stat file");
+    }
+    file_size = sb.st_size;
+
+    map_addr = (const char*)mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if (map_addr == MAP_FAILED) {
+        close(fd);
+        fd = -1;
+        map_addr = nullptr;
+        throw std::runtime_error("mmap failed");
+    }
+
+    auto* header = reinterpret_cast<const BinaryFormat::Header*>(map_addr);
+    if (header->magic != BinaryFormat::MAGIC) throw std::runtime_error("Invalid magic");
+    if (header->version != expected_version) throw std::runtime_error("Invalid version");
+
+    file_version = header->version;
+    num_terms = header->num_terms;
+
+    const char* ptr = map_addr + sizeof(BinaryFormat::Header);
+
+    urls.reserve(header->num_docs);
+    for (uint32_t i = 0; i < header->num_docs; ++i) {
+        uint32_t len = *reinterpret_cast<const uint32_t*>(ptr);
+        ptr += sizeof(uint32_t);
+        urls.emplace_back(ptr, len);
+        ptr += len;
+    }
+
+    term_directory = reinterpret_cast<const BinaryFormat::TermEntry*>(ptr);
+}
+
+const BinaryFormat::TermEntry* MappedIndexSource::findTermEntry(const std::string& term) const {
+    if (!term_directory || num_terms == 0 || !map_addr) return nullptr;
+
+    size_t h = std::hash<std::string>{}(term);
+
+    auto it = std::lower_bound(term_directory, term_directory + num_terms, h,
+                               [](const BinaryFormat::TermEntry& entry, size_t val) { return entry.term_hash < val; });
+
+    while (it != term_directory + num_terms && it->term_hash == h) {
+        const char* stored_term = map_addr + it->term_offset;
+        if (std::string(stored_term) == term) {
+            return it;
+        }
+        it++;
+    }
+    return nullptr;
+}
+
+std::vector<TermInfo> MappedIndexSource::getPostings(const std::string& term) {
+    const auto* entry = findTermEntry(term);
+    if (!entry) return {};
+
+    std::vector<TermInfo> results;
+    results.reserve(entry->doc_count);
+
+    size_t data_block_size = 0;
+    ptrdiff_t idx = entry - term_directory;
+    if ((size_t)(idx + 1) < num_terms) {
+        data_block_size = (size_t)((entry + 1)->data_offset - entry->data_offset);
+    } else {
+        data_block_size = file_size - entry->data_offset;
+    }
+
+    if (file_version == 1) {
+        const int* raw_data = reinterpret_cast<const int*>(map_addr + entry->data_offset);
+        size_t expected_pairs_size = entry->doc_count * sizeof(int) * 2;
+        if (data_block_size >= expected_pairs_size) {
+            for (uint32_t i = 0; i < entry->doc_count; ++i) {
+                int doc_id = raw_data[i * 2];
+                results.push_back(TermInfo{static_cast<uint32_t>(doc_id), 1});
+            }
+        } else {
+            for (uint32_t i = 0; i < entry->doc_count; ++i) {
+                TermInfo t{static_cast<uint32_t>(raw_data[i]), 1};
+                results.push_back(t);
+            }
+        }
+    } else {
+        const char* data_ptr = map_addr + entry->data_offset;
+        for (uint32_t i = 0; i < entry->doc_count; ++i) {
+            int doc_id = *reinterpret_cast<const int*>(data_ptr);
+            int tf = *reinterpret_cast<const int*>(data_ptr + sizeof(int));
+            results.push_back(TermInfo{static_cast<uint32_t>(doc_id), static_cast<uint32_t>(tf)});
+            data_ptr += sizeof(int) * 2;
+        }
+    }
+    return results;
+}
+
+std::string MappedIndexSource::getUrl(int doc_id) const {
+    if (doc_id >= 0 && doc_id < (int)urls.size()) return urls[doc_id];
+    return "";
 }

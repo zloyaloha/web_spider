@@ -57,6 +57,7 @@ public:
 
 class Tokenizer {
 private:
+    // store tokens as owned strings to avoid string_view lifetime issues
     std::vector<std::string> tokens;
     uint64_t total_len;
     std::unique_ptr<IStemmer> stemmer;
@@ -65,7 +66,8 @@ public:
     Tokenizer(std::unique_ptr<IStemmer> stemmer);
     Tokenizer();
     virtual void tokenize(const std::string_view& text);
-    virtual std::vector<std::string> getRawTokens(const std::string_view& text);
+    // Return token copies (std::string) so callers don't get dangling views
+    virtual std::vector<std::string> getRawTokens(const std::string_view& text) const;
 
     std::vector<std::string> getTokens() const;
     size_t tokensAmount() const;

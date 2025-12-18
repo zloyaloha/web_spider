@@ -1,10 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <string>
 
 #include "searcher.h"
 
-static bool vec_eq(const std::vector<std::string>& a, const std::vector<std::string>& b) {
+static bool vec_eq(const std::vector<std::string> &a, const std::vector<std::string> &b) {
     if (a.size() != b.size()) return false;
     for (size_t i = 0; i < a.size(); ++i)
         if (a[i] != b[i]) return false;
@@ -12,16 +13,15 @@ static bool vec_eq(const std::vector<std::string>& a, const std::vector<std::str
 }
 
 TEST(SearcherTests, SingleTermReturnsMatchingUrlsInOrder) {
-    SimpleHashMap<int> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    Indexator idx(index, urls, tokenizer);
+    BinaryIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
 
-    Searcher s(index, urls, tokenizer);
+    BinarySearcher s(src, tokenizer);
     auto res = s.findDocument("apple");
 
     std::vector<std::string> expected = {"http://a", "http://c"};
@@ -29,16 +29,15 @@ TEST(SearcherTests, SingleTermReturnsMatchingUrlsInOrder) {
 }
 
 TEST(SearcherTests, ImplicitANDBetweenTerms) {
-    SimpleHashMap<int> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    Indexator idx(index, urls, tokenizer);
+    BinaryIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
 
-    Searcher s(index, urls, tokenizer);
+    BinarySearcher s(src, tokenizer);
     auto res = s.findDocument("apple cherry");
 
     std::vector<std::string> expected = {"http://c"};
@@ -46,16 +45,15 @@ TEST(SearcherTests, ImplicitANDBetweenTerms) {
 }
 
 TEST(SearcherTests, OROperatorProducesUnion) {
-    SimpleHashMap<int> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    Indexator idx(index, urls, tokenizer);
+    BinaryIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
 
-    Searcher s(index, urls, tokenizer);
+    BinarySearcher s(src, tokenizer);
     auto res = s.findDocument("apple | banana");
 
     std::vector<std::string> expected = {"http://a", "http://b", "http://c"};
@@ -63,16 +61,15 @@ TEST(SearcherTests, OROperatorProducesUnion) {
 }
 
 TEST(SearcherTests, NOTOperatorNegatesSet) {
-    SimpleHashMap<int> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    Indexator idx(index, urls, tokenizer);
+    BinaryIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
 
-    Searcher s(index, urls, tokenizer);
+    BinarySearcher s(src, tokenizer);
     auto res = s.findDocument("!banana");
 
     std::vector<std::string> expected = {"http://c"};
@@ -80,16 +77,15 @@ TEST(SearcherTests, NOTOperatorNegatesSet) {
 }
 
 TEST(SearcherTests, ParenthesesAndPrecedenceHandling) {
-    SimpleHashMap<int> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    Indexator idx(index, urls, tokenizer);
+    BinaryIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "a b");
     idx.addDocument("http://b", "b c");
     idx.addDocument("http://c", "a c");
 
-    Searcher s(index, urls, tokenizer);
+    BinarySearcher s(src, tokenizer);
 
     auto res1 = s.findDocument("a | b & c");
     std::vector<std::string> expected1 = {"http://a", "http://b", "http://c"};
@@ -101,16 +97,15 @@ TEST(SearcherTests, ParenthesesAndPrecedenceHandling) {
 }
 
 TEST(SearcherTests, ComplexImplicitAndWithNot) {
-    SimpleHashMap<int> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    Indexator idx(index, urls, tokenizer);
+    BinaryIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple");
     idx.addDocument("http://b", "apple banana");
     idx.addDocument("http://c", "banana");
 
-    Searcher s(index, urls, tokenizer);
+    BinarySearcher s(src, tokenizer);
 
     auto res = s.findDocument("apple !banana");
     std::vector<std::string> expected = {"http://a"};
@@ -118,29 +113,27 @@ TEST(SearcherTests, ComplexImplicitAndWithNot) {
 }
 
 TEST(SearcherTests, NonexistentTokenReturnsEmpty) {
-    SimpleHashMap<int> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    Indexator idx(index, urls, tokenizer);
+    BinaryIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple");
 
-    Searcher s(index, urls, tokenizer);
+    BinarySearcher s(src, tokenizer);
     auto res = s.findDocument("nonexistent");
     EXPECT_TRUE(res.empty());
 }
 
 TEST(TFIDFSearcherTests, SingleTermReturnsMatchingUrlsInOrder) {
-    SimpleHashMap<PostingEntry> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    TFIDFIndexator idx(index, urls, tokenizer);
+    TFIDFIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
 
-    TFIDFSearcher s(index, urls, tokenizer);
+    TFIDFSearcher s(src, tokenizer);
     auto res = s.findDocument("apple");
 
     std::vector<std::string> expected = {"http://a", "http://c"};
@@ -148,16 +141,15 @@ TEST(TFIDFSearcherTests, SingleTermReturnsMatchingUrlsInOrder) {
 }
 
 TEST(TFIDFSearcherTests, ImplicitANDBetweenTerms) {
-    SimpleHashMap<PostingEntry> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    TFIDFIndexator idx(index, urls, tokenizer);
+    TFIDFIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
 
-    TFIDFSearcher s(index, urls, tokenizer);
+    TFIDFSearcher s(src, tokenizer);
     auto res = s.findDocument("apple cherry");
 
     std::vector<std::string> expected = {"http://c"};
@@ -165,16 +157,15 @@ TEST(TFIDFSearcherTests, ImplicitANDBetweenTerms) {
 }
 
 TEST(TFIDFSearcherTests, OROperatorProducesUnion) {
-    SimpleHashMap<PostingEntry> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    TFIDFIndexator idx(index, urls, tokenizer);
+    TFIDFIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
 
-    TFIDFSearcher s(index, urls, tokenizer);
+    TFIDFSearcher s(src, tokenizer);
     auto res = s.findDocument("apple | banana");
 
     std::vector<std::string> expected = {"http://a", "http://b", "http://c"};
@@ -182,16 +173,15 @@ TEST(TFIDFSearcherTests, OROperatorProducesUnion) {
 }
 
 TEST(TFIDFSearcherTests, NOTOperatorNegatesSet) {
-    SimpleHashMap<PostingEntry> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    TFIDFIndexator idx(index, urls, tokenizer);
+    TFIDFIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
 
-    TFIDFSearcher s(index, urls, tokenizer);
+    TFIDFSearcher s(src, tokenizer);
     auto res = s.findDocument("!banana");
 
     std::vector<std::string> expected = {"http://c"};
@@ -199,16 +189,15 @@ TEST(TFIDFSearcherTests, NOTOperatorNegatesSet) {
 }
 
 TEST(TFIDFSearcherTests, ParenthesesAndPrecedenceHandling) {
-    SimpleHashMap<PostingEntry> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    TFIDFIndexator idx(index, urls, tokenizer);
+    TFIDFIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "a b");
     idx.addDocument("http://b", "b c");
     idx.addDocument("http://c", "a c");
 
-    TFIDFSearcher s(index, urls, tokenizer);
+    TFIDFSearcher s(src, tokenizer);
 
     auto res1 = s.findDocument("a | b & c");
     std::vector<std::string> expected1 = {"http://a", "http://b", "http://c"};
@@ -220,16 +209,15 @@ TEST(TFIDFSearcherTests, ParenthesesAndPrecedenceHandling) {
 }
 
 TEST(TFIDFSearcherTests, ComplexImplicitAndWithNot) {
-    SimpleHashMap<int> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    Indexator idx(index, urls, tokenizer);
+    BinaryIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple");
     idx.addDocument("http://b", "apple banana");
     idx.addDocument("http://c", "banana");
 
-    Searcher s(index, urls, tokenizer);
+    BinarySearcher s(src, tokenizer);
 
     auto res = s.findDocument("apple !banana");
     std::vector<std::string> expected = {"http://a"};
@@ -237,14 +225,50 @@ TEST(TFIDFSearcherTests, ComplexImplicitAndWithNot) {
 }
 
 TEST(TFIDFSearcherTests, NonexistentTokenReturnsEmpty) {
-    SimpleHashMap<PostingEntry> index;
-    std::vector<std::string> urls;
+    auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    TFIDFIndexator idx(index, urls, tokenizer);
+    TFIDFIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple");
 
-    TFIDFSearcher s(index, urls, tokenizer);
+    TFIDFSearcher s(src, tokenizer);
     auto res = s.findDocument("nonexistent");
     EXPECT_TRUE(res.empty());
+}
+
+// Temporary debug test - remove once parsing issues are fixed
+class DebugSearcher : public BinarySearcher {
+public:
+    using BinarySearcher::BinarySearcher;
+    using ISearcher::evaluate;
+    using ISearcher::parseQuery;
+    using ISearcher::sortingStation;
+};
+
+TEST(DebugTests, ParseAndRPN) {
+    auto src = std::make_shared<RamIndexSource>();
+    auto tokenizer = std::make_shared<Tokenizer>();
+    BinaryIndexator idx(src, tokenizer);
+    idx.addDocument("http://a", "apple banana");
+    idx.addDocument("http://b", "banana cherry");
+    idx.addDocument("http://c", "apple cherry date");
+
+    DebugSearcher s(src, tokenizer);
+    auto tokens = s.parseQuery("apple cherry");
+    std::vector<std::string> tks;
+    for (auto &t : tokens) tks.push_back(std::string(t));
+    auto rpn = s.sortingStation(tokens);
+    std::vector<std::string> rpn_s;
+    for (auto &r : rpn) rpn_s.push_back(std::string(r));
+    auto res = s.evaluate(rpn, src->getTotalDocs());
+
+    std::cerr << "DEBUG tokens: ";
+    for (auto &x : tks) std::cerr << x << ", ";
+    std::cerr << "\n";
+    std::cerr << "DEBUG rpn: ";
+    for (auto &x : rpn_s) std::cerr << x << ", ";
+    std::cerr << "\n";
+    std::cerr << "DEBUG res ids: ";
+    for (auto &id : res) std::cerr << id << ", ";
+    std::cerr << "\n";
 }

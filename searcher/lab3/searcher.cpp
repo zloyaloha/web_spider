@@ -1,84 +1,63 @@
 #include "searcher.h"
 
-#include <bsoncxx/builder/stream/document.hpp>
-#include <bsoncxx/json.hpp>
 #include <iostream>
 #include <memory>
-#include <mongocxx/client.hpp>
 #include <mongocxx/instance.hpp>
-#include <mongocxx/options/find.hpp>  // Не забудьте подключить этот заголовок
-#include <mongocxx/uri.hpp>
 #include <string>
-#include <string_view>
 
+#include "db_downloader.h"
 #include "tokenizer.h"
 
-using bsoncxx::builder::stream::document;
-using bsoncxx::builder::stream::finalize;
-
-int main() {
-    std::unordered_map<std::string_view, std::vector<std::string>> link2tokens;
-
-    mongocxx::instance inst{};
-
-    mongocxx::client client{mongocxx::uri{"mongodb://localhost:27017"}};
-
-    auto db = client["sports_corpus"];
-    auto coll = db["documents"];
-    size_t total_bytes = 0;
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    auto projection = document{} << "normalized_url" << 1 << "content" << 1 << "_id" << 0 << finalize;
-
-    int64_t count = coll.count_documents({});
-
-    mongocxx::options::find opts;
-    opts.projection(projection.view());
-
-    auto cursor = coll.find({}, opts);
-
+int main(int argc, char* argv[]) {
+    SimpleHashMap<int> index;
+    std::vector<std::string> urls;
     auto stemmer = std::make_unique<PorterStemmer>();
     auto tokenizer = std::make_shared<Tokenizer>(std::move(stemmer));
+    auto source = std::make_shared<RamIndexSource>();
+    TFIDFIndexator indexator(source, tokenizer);
+    if (argc == 3 && std::string(argv[1]) == "-i") {
+        mongocxx::instance inst{};
+        DocumentDownloader downloader("mongodb://localhost:27017");
 
-    // SimpleHashMap<int> index;
-    // std::vector<std::string> urls;
+        std::cout << "Начал загрузку документов\n";
+        auto start_time = std::chrono::high_resolution_clock::now();
+        auto documents = downloader.downloadDocuments(std::stoi(argv[2]));
+        auto end_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> duration = end_time - start_time;
+        std::cout << "Время: " << duration.count() << " сек\n";
 
-    // Indexator indexator(index, urls, tokenizer);
+        uint64_t total_bytes = 0;
+        start_time = std::chrono::high_resolution_clock::now();
 
-    SimpleHashMap<PostingEntry> index;
-    std::vector<std::string> urls;
+        std::cout << "Начал индексацию документов\n";
+        int counter = 0;
+        for (const auto& document : documents) {
+            total_bytes += document.content.size();
+            indexator.addDocument(document.url, document.content);
+            std::clog << "\rIndexated " << counter++;
+        }
+        end_time = std::chrono::high_resolution_clock::now();
+        duration = end_time - start_time;
 
-    TFIDFIndexator indexator(index, urls, tokenizer);
-    int counter = 0;
-    for (auto&& doc : cursor) {
-        bsoncxx::document::element url_ele = doc["normalized_url"];
-        bsoncxx::document::element content = doc["content"];
-        std::string_view url_view(url_ele.get_string().value.data(), url_ele.get_string().value.size());
-        std::string_view content_view(content.get_string().value.data(), content.get_string().value.size());
+        double speed_kb_s = (total_bytes / 1024.0) / duration.count();
 
-        total_bytes += content_view.size();
-
-        indexator.addDocument(url_view.data(), content_view.data());
-        std::cout << counter++ << std::endl;
-        std::cout << url_view << std::endl;
+        std::cout << "\nВремя: " << duration.count() << " сек\n";
+        std::cout << "Объем данных: " << total_bytes / 1024.0 / 1024.0 << " MB\n";
+        std::cout << "Скорость обработки: " << speed_kb_s << " KB/s\n";
+        source->dump("../dump.idx");
+        std::cout << "Индекс сдамплен!\n";
     }
-    auto end_time = std::chrono::high_resolution_clock::now();
-    std::chrono::duration<double> duration = end_time - start_time;
-    double speed_kb_s = (total_bytes / 1024.0) / duration.count();
-
-    std::cout << "Время: " << duration.count() << " сек\n";
-    std::cout << "Объем данных: " << total_bytes / 1024.0 / 1024.0 << " MB\n";
-    std::cout << "Скорость обработки: " << speed_kb_s << " KB/s\n";
-
-    TFIDFSearcher searcher(index, urls, tokenizer);
+    auto mapped_source = std::make_shared<MappedIndexSource>("../dump.idx", 2);
+    BinarySearcher searcher(mapped_source, tokenizer);
     while (true) {
+        std::cout << "Введите запрос: ";
         std::string request;
         std::getline(std::cin, request);
 
-        start_time = std::chrono::high_resolution_clock::now();
+        auto start_time = std::chrono::high_resolution_clock::now();
         auto result = searcher.findDocument(request);
-        end_time = std::chrono::high_resolution_clock::now();
-        duration = end_time - start_time;
+        auto end_time = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> duration = end_time - start_time;
 
         std::cout << "Топ 5 результатов" << std::endl;
         for (int i = 0; i < 5 && i < result.size(); ++i) {

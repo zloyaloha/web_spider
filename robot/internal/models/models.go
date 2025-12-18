@@ -14,7 +14,6 @@ type Document struct {
 	Source        string    `bson:"source"`
 	HTMLContent   string    `bson:"html_content"`
 	Title         string    `bson:"title"`
-	Content       string    `bson:"content"`
 	ContentHash   string    `bson:"content_hash"`
 	FirstScraped  int64     `bson:"first_scraped"`
 	LastScraped   int64     `bson:"last_scraped"`

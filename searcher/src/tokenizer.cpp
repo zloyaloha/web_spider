@@ -1,14 +1,15 @@
 #include "tokenizer.h"
 
 #include <cctype>
+#include <string_view>
 
 Tokenizer::Tokenizer(std::unique_ptr<IStemmer> stemmer) : stemmer(std::move(stemmer)) {}
 
 Tokenizer::Tokenizer() : stemmer(std::make_unique<DummyStemmer>()) {}
 
-std::vector<std::string> Tokenizer::getRawTokens(const std::string_view& query) {
+std::vector<std::string> Tokenizer::getRawTokens(const std::string_view& query) const {
     std::vector<std::string> rawTokens;
-    std::string currentToken = "";
+    std::string currentToken;
     for (size_t i = 0; i < query.length(); ++i) {
         char c = query[i];
         bool is_op_char = (c == '(' || c == ')' || c == '!' || c == '&' || c == '|');
@@ -18,7 +19,7 @@ std::vector<std::string> Tokenizer::getRawTokens(const std::string_view& query) 
                 currentToken.clear();
             }
             if (is_op_char) {
-                rawTokens.push_back(std::string(1, c));
+                rawTokens.emplace_back(1, c);
             }
         } else {
             currentToken += c;
