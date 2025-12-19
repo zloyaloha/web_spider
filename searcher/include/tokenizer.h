@@ -30,9 +30,9 @@ private:
 
     bool endsWith(const std::string& w, const std::string& suffix) const;
 
-    std::string replaceSuffixIfMeasure(std::string& w, const std::string& suffix, const std::string& replacement, int minM);
+    bool replaceSuffixIfMeasure(std::string& w, const std::string& suffix, const std::string& replacement, int minM);
 
-    std::string replaceSuffixIfVowel(std::string& w, const std::string& suffix, const std::string& replacement);
+    bool replaceSuffixIfVowel(std::string& w, const std::string& suffix, const std::string& replacement);
 
     void step1();
 

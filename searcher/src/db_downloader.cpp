@@ -1,14 +1,18 @@
 #include "db_downloader.h"
 
+#include <cstdint>
 #include <iostream>
 #include <regex>
 
-DocumentDownloader::DocumentDownloader(const std::string& uri) : client(mongocxx::uri{uri}) {}
+#include "indexator.h"
+
+DocumentDownloader::DocumentDownloader(const std::string& uri, std::shared_ptr<IIndexator> idxator)
+    : client(mongocxx::uri{uri}), indexator(std::move(idxator)) {}
 
 using bsoncxx::builder::stream::document;
 using bsoncxx::builder::stream::finalize;
 
-std::vector<Document> DocumentDownloader::downloadDocuments(int max_documents) {
+void DocumentDownloader::downloadDocuments(int max_documents) {
     std::vector<Document> documents;
 
     auto db = client["sports_corpus"];
@@ -26,7 +30,9 @@ std::vector<Document> DocumentDownloader::downloadDocuments(int max_documents) {
 
     auto cursor = coll.find({}, opts);
     int counter = 0;
-    size_t total_bytes = 0;
+    uint64_t total_downloaded_bytes = 0;
+    uint64_t total_content_bytes = 0;
+    double total_indexate_time = 0.;
 
     for (auto&& doc : cursor) {
         auto url_ele = doc["normalized_url"];
@@ -43,19 +49,28 @@ std::vector<Document> DocumentDownloader::downloadDocuments(int max_documents) {
             extractText(output->root, content);
             cleanText(content);
 
-            documents.emplace_back(Document{std::move(url), std::move(content)});
+            auto start_time = std::chrono::high_resolution_clock::now();
+            indexator->addDocument(url, content);
+            auto end_time = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> duration = end_time - start_time;
+            total_indexate_time += duration.count();
 
-            total_bytes += (html.length());
-            std::clog << "\rDownloaded: " << counter++ << " docs (" << total_bytes / 1024 / 1024 << " MB)" << std::flush;
+            total_downloaded_bytes += html.size();
+            total_content_bytes += content.size();
+            std::clog << "\rDownloaded: " << counter++ << " docs";
             gumbo_destroy_output(&kGumboDefaultOptions, output);
             if (counter == max_documents) {
                 break;
             }
         }
     }
-    std::clog << "\nFinished. Total docs: " << counter << std::endl;
+    double speed_kb_s = (total_content_bytes / 1024.0) / total_indexate_time;
 
-    return documents;
+    std::clog << "\nFinished. Total docs: " << counter << std::endl;
+    std::clog << "Total indexate time: " << total_indexate_time << std::endl;
+    std::clog << "Speed indexate: " << speed_kb_s << std::endl;
+    std::cout << "Total downloaded bytes: " << total_downloaded_bytes / 1024.0 / 1024.0 << " MB\n";
+    std::cout << "Total indexated bytes: " << total_content_bytes / 1024.0 / 1024.0 << " MB\n";
 }
 
 void DocumentDownloader::extractText(GumboNode* node, std::string& buffer) {

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <memory>
 
-#include "searcher.h"
+#include "indexator.h"
 
 static bool contains(const std::vector<int> &v, int x) { return std::find(v.begin(), v.end(), x) != v.end(); }
 

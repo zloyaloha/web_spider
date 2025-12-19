@@ -323,7 +323,7 @@ protected:
 
 TEST_F(NotListTest, BasicNegation) {
     std::vector<int> l = {1, 3, 5};
-    int total_docs = 6;  // 0, 1, 2, 3, 4, 5
+    int total_docs = 6;
 
     auto result = not_list(l, total_docs);
 

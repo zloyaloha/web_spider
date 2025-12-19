@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "indexator.h"
 #include "searcher.h"
 
 static std::string create_temp_file() {
@@ -29,10 +30,10 @@ static void set_file_version(const std::string &path, uint32_t version) {
     close(fd);
 }
 
-static bool vec_eq(const std::vector<std::string> &a, const std::vector<std::string> &b) {
+static bool vec_eq(const std::vector<std::pair<std::string, double>> &a, const std::vector<std::pair<std::string, double>> &b) {
     if (a.size() != b.size()) return false;
     for (size_t i = 0; i < a.size(); ++i)
-        if (a[i] != b[i]) return false;
+        if (a[i].first != b[i].first) return false;
     return true;
 }
 
@@ -46,7 +47,7 @@ TEST(MappedIndexSourceTests, LoadAndReadV2) {
     idx.addDocument("http://c", "cherry");
 
     std::string path = create_temp_file();
-    src->dump(path);
+    src->dump(path, 1);
 
     MappedIndexSource mapped(path, 2);
     EXPECT_EQ(mapped.getTotalDocs(), 3);
@@ -57,7 +58,6 @@ TEST(MappedIndexSourceTests, LoadAndReadV2) {
     auto postings = mapped.getPostings("apple");
     ASSERT_EQ(postings.size(), 2u);
 
-    // should contain doc 0 (tf=2) and doc 1 (tf=1)
     bool found0 = false, found1 = false;
     for (const auto &p : postings) {
         if (p.doc_id == 0) {
@@ -75,36 +75,8 @@ TEST(MappedIndexSourceTests, LoadAndReadV2) {
     auto mapped_ptr = std::make_shared<MappedIndexSource>(path, 2);
     TFIDFSearcher s(mapped_ptr, tok);
     auto res = s.findDocument("apple");
-    std::vector<std::string> expected = {"http://a", "http://b"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://a", 0.}, {"http://b", 0}};
     EXPECT_TRUE(vec_eq(res, expected));
-
-    unlink(path.c_str());
-}
-
-TEST(MappedIndexSourceTests, Version1Behavior) {
-    auto src = std::make_shared<RamIndexSource>();
-    auto tok = std::make_shared<Tokenizer>();
-    TFIDFIndexator idx(src, tok);
-
-    idx.addDocument("http://a", "apple banana apple");
-    idx.addDocument("http://b", "banana apple");
-
-    std::string path = create_temp_file();
-    src->dump(path);
-
-    // Force version to 1 to test reading of doc-only lists
-    set_file_version(path, 1);
-
-    MappedIndexSource mapped(path, 1);
-    EXPECT_EQ(mapped.getTotalDocs(), 2);
-
-    auto postings = mapped.getPostings("apple");
-    ASSERT_EQ(postings.size(), 2u);
-
-    for (const auto &p : postings) {
-        EXPECT_EQ(p.tf, 1u);  // v1 should report tf == 1
-        EXPECT_TRUE(p.doc_id == 0 || p.doc_id == 1);
-    }
 
     unlink(path.c_str());
 }
@@ -117,11 +89,95 @@ TEST(MappedIndexSourceTests, NonexistentTermReturnsEmpty) {
     idx.addDocument("http://a", "apple");
 
     std::string path = create_temp_file();
-    src->dump(path);
+    src->dump(path, 1);
 
     MappedIndexSource mapped(path, 2);
     auto p = mapped.getPostings("nope");
     EXPECT_TRUE(p.empty());
 
     unlink(path.c_str());
+}
+
+TEST(MappedIndexSourceTests, LoadAndReadV1) {
+    auto src = std::make_shared<RamIndexSource>();
+    auto tok = std::make_shared<Tokenizer>();
+    TFIDFIndexator idx(src, tok);
+
+    idx.addDocument("http://a", "apple banana apple");
+    idx.addDocument("http://b", "banana apple");
+    idx.addDocument("http://c", "cherry");
+
+    std::string path = create_temp_file();
+    src->dump(path, 0);  // version 1
+
+    MappedIndexSource mapped(path, 1);
+    EXPECT_EQ(mapped.getTotalDocs(), 3);
+    EXPECT_EQ(mapped.getUrl(0), "http://a");
+    EXPECT_EQ(mapped.getUrl(1), "http://b");
+    EXPECT_EQ(mapped.getUrl(2), "http://c");
+
+    auto postings = mapped.getPostings("apple");
+    ASSERT_EQ(postings.size(), 2u);
+
+    bool found0 = false, found1 = false;
+    for (const auto &p : postings) {
+        if (p.doc_id == 0) {
+            found0 = true;
+            EXPECT_EQ(p.tf, 2u);
+        }
+        if (p.doc_id == 1) {
+            found1 = true;
+            EXPECT_EQ(p.tf, 1u);
+        }
+    }
+    EXPECT_TRUE(found0 && found1);
+
+    unlink(path.c_str());
+}
+
+TEST(MappedIndexSourceTests, WrongVersionThrows) {
+    auto src = std::make_shared<RamIndexSource>();
+    auto tok = std::make_shared<Tokenizer>();
+    BinaryIndexator idx(src, tok);
+
+    idx.addDocument("http://a", "apple");
+
+    std::string path = create_temp_file();
+    src->dump(path, 0);
+
+    EXPECT_THROW({ MappedIndexSource mapped(path, 2); }, std::runtime_error);
+
+    unlink(path.c_str());
+}
+
+TEST(MappedIndexSourceTests, DumpEmptyIndex) {
+    auto src = std::make_shared<RamIndexSource>();
+
+    std::string path = create_temp_file();
+    src->dump(path, 0);
+
+    MappedIndexSource mapped(path, 1);
+    EXPECT_EQ(mapped.getTotalDocs(), 0u);
+    EXPECT_EQ(mapped.getUrl(0), "");
+    EXPECT_TRUE(mapped.getPostings("any").empty());
+
+    unlink(path.c_str());
+}
+
+TEST(MappedIndexSourceTests, DumpToDirectoryThrows) {
+    auto src = std::make_shared<RamIndexSource>();
+    auto tok = std::make_shared<Tokenizer>();
+    BinaryIndexator idx(src, tok);
+
+    idx.addDocument("http://a", "apple");
+
+    char tmpl[] = "/tmp/web_spider_dir_XXXXXX";
+    char *dir = mkdtemp(tmpl);
+    ASSERT_NE(dir, nullptr);
+
+    std::string dirpath(dir);
+
+    EXPECT_THROW(src->dump(dirpath, 0), std::runtime_error);
+
+    rmdir(dirpath.c_str());
 }

@@ -3,9 +3,10 @@
 #include <memory>
 #include <string>
 
+#include "indexator.h"
 #include "searcher.h"
 
-static bool vec_eq(const std::vector<std::string> &a, const std::vector<std::string> &b) {
+static bool vec_eq(const std::vector<std::pair<std::string, double>> &a, const std::vector<std::pair<std::string, double>> &b) {
     if (a.size() != b.size()) return false;
     for (size_t i = 0; i < a.size(); ++i)
         if (a[i] != b[i]) return false;
@@ -24,7 +25,7 @@ TEST(SearcherTests, SingleTermReturnsMatchingUrlsInOrder) {
     BinarySearcher s(src, tokenizer);
     auto res = s.findDocument("apple");
 
-    std::vector<std::string> expected = {"http://a", "http://c"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://a", 0.}, {"http://c", 0.}};
     EXPECT_TRUE(vec_eq(res, expected));
 }
 
@@ -40,7 +41,7 @@ TEST(SearcherTests, ImplicitANDBetweenTerms) {
     BinarySearcher s(src, tokenizer);
     auto res = s.findDocument("apple cherry");
 
-    std::vector<std::string> expected = {"http://c"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://c", 0.}};
     EXPECT_TRUE(vec_eq(res, expected));
 }
 
@@ -56,7 +57,7 @@ TEST(SearcherTests, OROperatorProducesUnion) {
     BinarySearcher s(src, tokenizer);
     auto res = s.findDocument("apple | banana");
 
-    std::vector<std::string> expected = {"http://a", "http://b", "http://c"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://a", 0.}, {"http://b", 0.}, {"http://c", 0}};
     EXPECT_TRUE(vec_eq(res, expected));
 }
 
@@ -72,7 +73,7 @@ TEST(SearcherTests, NOTOperatorNegatesSet) {
     BinarySearcher s(src, tokenizer);
     auto res = s.findDocument("!banana");
 
-    std::vector<std::string> expected = {"http://c"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://c", 0.}};
     EXPECT_TRUE(vec_eq(res, expected));
 }
 
@@ -88,12 +89,13 @@ TEST(SearcherTests, ParenthesesAndPrecedenceHandling) {
     BinarySearcher s(src, tokenizer);
 
     auto res1 = s.findDocument("a | b & c");
-    std::vector<std::string> expected1 = {"http://a", "http://b", "http://c"};
+    std::vector<std::pair<std::string, double>> expected1 = {{"http://a", 0.}, {"http://b", 0.}, {"http://c", 0.}};
     EXPECT_TRUE(vec_eq(res1, expected1));
 
     auto res2 = s.findDocument("(a | b) & c");
     EXPECT_EQ(res2.size(), 2u);
-    EXPECT_TRUE((res2[0] == "http://b" && res2[1] == "http://c") || (res2[0] == "http://c" && res2[1] == "http://b"));
+    EXPECT_TRUE((res2[0].first == "http://b" && res2[1].first == "http://c") ||
+                (res2[0].first == "http://c" && res2[1].first == "http://b"));
 }
 
 TEST(SearcherTests, ComplexImplicitAndWithNot) {
@@ -108,7 +110,7 @@ TEST(SearcherTests, ComplexImplicitAndWithNot) {
     BinarySearcher s(src, tokenizer);
 
     auto res = s.findDocument("apple !banana");
-    std::vector<std::string> expected = {"http://a"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://a", 0.}};
     EXPECT_TRUE(vec_eq(res, expected));
 }
 
@@ -136,7 +138,7 @@ TEST(TFIDFSearcherTests, SingleTermReturnsMatchingUrlsInOrder) {
     TFIDFSearcher s(src, tokenizer);
     auto res = s.findDocument("apple");
 
-    std::vector<std::string> expected = {"http://a", "http://c"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://a", 0.}, {"http://c", 0.}};
     EXPECT_TRUE(vec_eq(res, expected));
 }
 
@@ -152,7 +154,7 @@ TEST(TFIDFSearcherTests, ImplicitANDBetweenTerms) {
     TFIDFSearcher s(src, tokenizer);
     auto res = s.findDocument("apple cherry");
 
-    std::vector<std::string> expected = {"http://c"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://c", 0.}};
     EXPECT_TRUE(vec_eq(res, expected));
 }
 
@@ -168,7 +170,7 @@ TEST(TFIDFSearcherTests, OROperatorProducesUnion) {
     TFIDFSearcher s(src, tokenizer);
     auto res = s.findDocument("apple | banana");
 
-    std::vector<std::string> expected = {"http://a", "http://b", "http://c"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://a", 0.}, {"http://b", 0.}, {"http://c", 0.}};
     EXPECT_TRUE(vec_eq(res, expected));
 }
 
@@ -184,7 +186,7 @@ TEST(TFIDFSearcherTests, NOTOperatorNegatesSet) {
     TFIDFSearcher s(src, tokenizer);
     auto res = s.findDocument("!banana");
 
-    std::vector<std::string> expected = {"http://c"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://c", 0.}};
     EXPECT_TRUE(vec_eq(res, expected));
 }
 
@@ -200,12 +202,13 @@ TEST(TFIDFSearcherTests, ParenthesesAndPrecedenceHandling) {
     TFIDFSearcher s(src, tokenizer);
 
     auto res1 = s.findDocument("a | b & c");
-    std::vector<std::string> expected1 = {"http://a", "http://b", "http://c"};
+    std::vector<std::pair<std::string, double>> expected1 = {{"http://a", 0.}, {"http://b", 0.}, {"http://c", 0}};
     EXPECT_TRUE(vec_eq(res1, expected1));
 
     auto res2 = s.findDocument("(a | b) & c");
     EXPECT_EQ(res2.size(), 2u);
-    EXPECT_TRUE((res2[0] == "http://b" && res2[1] == "http://c") || (res2[0] == "http://c" && res2[1] == "http://b"));
+    EXPECT_TRUE((res2[0].first == "http://b" && res2[1].first == "http://c") ||
+                (res2[0].first == "http://c" && res2[1].first == "http://b"));
 }
 
 TEST(TFIDFSearcherTests, ComplexImplicitAndWithNot) {
@@ -220,7 +223,7 @@ TEST(TFIDFSearcherTests, ComplexImplicitAndWithNot) {
     BinarySearcher s(src, tokenizer);
 
     auto res = s.findDocument("apple !banana");
-    std::vector<std::string> expected = {"http://a"};
+    std::vector<std::pair<std::string, double>> expected = {{"http://a", 0.}};
     EXPECT_TRUE(vec_eq(res, expected));
 }
 
@@ -236,39 +239,50 @@ TEST(TFIDFSearcherTests, NonexistentTokenReturnsEmpty) {
     EXPECT_TRUE(res.empty());
 }
 
-// Temporary debug test - remove once parsing issues are fixed
-class DebugSearcher : public BinarySearcher {
-public:
-    using BinarySearcher::BinarySearcher;
-    using ISearcher::evaluate;
-    using ISearcher::parseQuery;
-    using ISearcher::sortingStation;
-};
+TEST(TokenizerRawTest, GetRawTokensOperatorsAndParentheses) {
+    auto tokenizer = std::make_unique<Tokenizer>();
 
-TEST(DebugTests, ParseAndRPN) {
+    auto tokens = tokenizer->getRawTokens("!(apple|banana) & cherry");
+    std::vector<std::string> expected = {"!", "(", "apple", "|", "banana", ")", "&", "cherry"};
+    EXPECT_EQ(tokens, expected);
+
+    auto tokens2 = tokenizer->getRawTokens("apple&banana");
+    std::vector<std::string> expected2 = {"apple", "&", "banana"};
+    EXPECT_EQ(tokens2, expected2);
+}
+
+TEST(TFIDFTests, TFIDFScoreOrdersByTermFrequency) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
-    BinaryIndexator idx(src, tokenizer);
-    idx.addDocument("http://a", "apple banana");
-    idx.addDocument("http://b", "banana cherry");
-    idx.addDocument("http://c", "apple cherry date");
 
-    DebugSearcher s(src, tokenizer);
-    auto tokens = s.parseQuery("apple cherry");
-    std::vector<std::string> tks;
-    for (auto &t : tokens) tks.push_back(std::string(t));
-    auto rpn = s.sortingStation(tokens);
-    std::vector<std::string> rpn_s;
-    for (auto &r : rpn) rpn_s.push_back(std::string(r));
-    auto res = s.evaluate(rpn, src->getTotalDocs());
+    TFIDFIndexator idx(src, tokenizer);
+    idx.addDocument("http://a", "apple apple banana");
+    idx.addDocument("http://b", "apple cherry");
 
-    std::cerr << "DEBUG tokens: ";
-    for (auto &x : tks) std::cerr << x << ", ";
-    std::cerr << "\n";
-    std::cerr << "DEBUG rpn: ";
-    for (auto &x : rpn_s) std::cerr << x << ", ";
-    std::cerr << "\n";
-    std::cerr << "DEBUG res ids: ";
-    for (auto &id : res) std::cerr << id << ", ";
-    std::cerr << "\n";
+    TFIDFSearcher s(src, tokenizer);
+    auto res = s.findDocument("apple");
+
+    ASSERT_EQ(res.size(), 2);
+
+    EXPECT_TRUE(std::isfinite(res[0].second));
+    EXPECT_TRUE(std::isfinite(res[1].second));
+    EXPECT_GT(res[0].second, res[1].second);
+}
+
+TEST(Integration, FullFlow) {
+    auto source = std::make_shared<RamIndexSource>();
+    auto tok = std::make_shared<Tokenizer>(std::make_unique<PorterStemmer>());
+    TFIDFIndexator indexator(source, tok);
+
+    indexator.addDocument("url1", "The quick brown fox");
+    indexator.addDocument("url2", "Jumps over the lazy dog");
+
+    source->dump("test.idx", true);
+    MappedIndexSource mapped("test.idx", 2);
+
+    BinarySearcher searcher(std::make_shared<MappedIndexSource>(std::move(mapped)), tok);
+    auto results = searcher.findDocument("quick fox");
+
+    ASSERT_FALSE(results.empty());
+    EXPECT_EQ(results[0].first, "url1");
 }
