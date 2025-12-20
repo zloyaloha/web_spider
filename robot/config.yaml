@@ -1,0 +1,12 @@
+db:
+  connection: "mongodb://localhost:27017"
+  database: "sports_corpus"
+  collections:
+    documents: "documents"
+logic:
+  delay_ms: 500
+  timeout_sec: 30
+  max_retries: 3
+  max_depth: 1000
+  recrawl_threshold_hours: 24
+  max_concurrent_workers: 8

@@ -30,3 +30,10 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+build/
+.vscode
+<<<<<<< HEAD
+=======
+*.idx
+.DS_Store
+>>>>>>> 807734f (new file location & test improvment)
