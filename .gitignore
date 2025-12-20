@@ -32,8 +32,7 @@ go.work.sum
 # .vscode/
 build/
 .vscode
-<<<<<<< HEAD
-=======
+.cache/
+*.csv
 *.idx
 .DS_Store
->>>>>>> 807734f (new file location & test improvment)
