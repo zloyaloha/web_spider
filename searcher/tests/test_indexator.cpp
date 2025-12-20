@@ -151,10 +151,8 @@ TEST(IndexatorTests, HyphenApostropheAndNumbersTokenizedCorrectly) {
 }
 
 TEST(IndexatorTests, UsesCustomStemmerWhenProvided) {
-    // Custom test stemmer that appends "_stem" to each token so we can assert
-    // Indexator stores stemmed tokens instead of raw tokens.
     struct TestStemmer : public IStemmer {
-        std::string stem(std::string &word) override { return word + "_stem"; }
+        std::string stem(std::string word) override { return word + "_stem"; }
     };
 
     auto src = std::make_shared<RamIndexSource>();
@@ -360,7 +358,7 @@ TEST(TFIDFIndexatorTests, HyphenApostropheAndNumbersTokenizedCorrectly) {
 
 TEST(TFIDFIndexatorTests, UsesCustomStemmerWhenProvided) {
     struct TestStemmer : public IStemmer {
-        std::string stem(std::string &word) override { return word + "_stem"; }
+        std::string stem(std::string word) override { return word + "_stem"; }
     };
 
     auto src = std::make_shared<RamIndexSource>();

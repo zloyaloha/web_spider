@@ -165,9 +165,6 @@ func (d *MongoDB) SaveDocument(doc *models.Document) error {
 				"first_scraped":  doc.FirstScraped,
 				"last_scraped":   doc.LastScraped,
 				"last_modified":  doc.LastScraped,
-				"status_code":    doc.StatusCode,
-				"is_valid":       doc.IsValid,
-				"error_message":  doc.ErrorMessage,
 			},
 			"$inc": bson.M{"scraped_count": 1},
 		}
@@ -177,9 +174,6 @@ func (d *MongoDB) SaveDocument(doc *models.Document) error {
 			update = bson.M{
 				"$set": bson.M{
 					"last_scraped":  doc.LastScraped,
-					"status_code":   doc.StatusCode,
-					"is_valid":      doc.IsValid,
-					"error_message": doc.ErrorMessage,
 				},
 				"$inc": bson.M{"scraped_count": 1},
 			}
@@ -192,9 +186,6 @@ func (d *MongoDB) SaveDocument(doc *models.Document) error {
 					"content_length": len(doc.HTMLContent),
 					"last_scraped":   doc.LastScraped,
 					"last_modified":  time.Now().Unix(),
-					"status_code":    doc.StatusCode,
-					"is_valid":       doc.IsValid,
-					"error_message":  doc.ErrorMessage,
 				},
 				"$inc": bson.M{"scraped_count": 1},
 			}

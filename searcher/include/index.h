@@ -11,10 +11,10 @@ struct Header {
 };
 
 struct TermEntry {
-    size_t term_hash;      // Хеш строки для быстрого сравнения
-    uint64_t term_offset;  // Смещение строки термина в файле
-    uint64_t data_offset;  // Смещение списка doc_ids
-    uint32_t doc_count;    // Количество документов
+    size_t term_hash;
+    uint64_t term_offset;
+    uint64_t data_offset;
+    uint32_t doc_count;
 };
 
 const uint32_t MAGIC = 0xABC1234;

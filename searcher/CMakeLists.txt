@@ -35,7 +35,7 @@ target_include_directories(search_lib PUBLIC include/ ${GUMBO_INCLUDE_DIRS})
 target_link_libraries(search_lib PRIVATE mongo::mongocxx_shared mongo::bsoncxx_shared ${GUMBO_LDFLAGS})
 
 add_executable(main lab3/main.cpp)
-target_link_libraries(main PUBLIC search_lib cxxopts)
+target_link_libraries(main PUBLIC search_lib cxxopts mongo::mongocxx_shared mongo::bsoncxx_shared)
 
 add_executable(doc_searcher lab3/searcher.cpp)
 target_link_libraries(doc_searcher PRIVATE mongo::mongocxx_shared mongo::bsoncxx_shared)

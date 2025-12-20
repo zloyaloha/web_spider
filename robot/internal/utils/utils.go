@@ -1,4 +1,4 @@
-package urlqueue
+package utils
 
 import (
 	"crypto/md5"
@@ -6,55 +6,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 )
 
-type URLQueue struct {
-	URLs     map[string]bool
-	Queue    []string
-	Source   string
-	MaxPages int
-	mu       sync.Mutex
-}
-
-
-func (q *URLQueue) Add(urlStr string) bool {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	normalized := NormalizeURL(urlStr)
-	if !q.URLs[normalized] {
-		q.URLs[normalized] = true
-		q.Queue = append(q.Queue, normalized)
-		return true
-	}
-	return false
-}
-
-func (q *URLQueue) Get() (string, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	if len(q.Queue) == 0 {
-		return "", false
-	}
-	url := q.Queue[0]
-	q.Queue = q.Queue[1:]
-	return url, true
-}
-
-func NewURLQueue(source string, maxPages int) *URLQueue {
-	return &URLQueue{
-		URLs:     make(map[string]bool),
-		Queue:    make([]string, 0),
-		Source:   source,
-		MaxPages: maxPages,
-	}
-}
-
-func (q *URLQueue) Size() int {
-	return len(q.Queue)
-}
 
 func NormalizeURL(urlStr string) string {
 	parsed, err := url.Parse(urlStr)

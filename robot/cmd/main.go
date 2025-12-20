@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"web_spider/internal/app"
 	"web_spider/internal/config"
@@ -15,19 +16,23 @@ func generateArchiveURLs(base string, fin_page int) []string {
 }
 
 func main() {
-	config, err := config.LoadConfig("config.yaml")
+	configPath := flag.String("config", "config.yaml", "Path to configuration file")
+
+    flag.Parse()
+
+    cfg, err := config.LoadConfig(*configPath)
 
 	if err != nil {
 		panic(err)
 	}
 
-	crawler := app.NewNewsCrawler(config)
+	crawler := app.NewNewsCrawler(cfg)
 
 	startURLGuardian := "https://www.theguardian.com/sport"
-	// startURLWiki := "https://en.wikipedia.org/wiki/Category:Sports"
+	startURLWiki := "https://en.wikipedia.org/wiki/Category:Sports"
 	urls := generateArchiveURLs(startURLGuardian, 100);
 	urls = append(urls, startURLGuardian)
-	// urls = append(urls, startURLWiki)
+	urls = append(urls, startURLWiki)
 
 
 	crawler.Start(urls, 1000000000)

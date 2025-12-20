@@ -14,7 +14,7 @@ import (
 	"web_spider/internal/config"
 	"web_spider/internal/db"
 	"web_spider/internal/models"
-	urlqueue "web_spider/internal/url_queue"
+	"web_spider/internal/utils"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-shiori/go-readability"
@@ -83,6 +83,8 @@ func NewNewsCrawler(cfg *config.SpiderConfig) *Spider {
 		colly.UserAgent("Mozilla/5.0 (NewsBot/1.0)"),
 		colly.Async(true),
 	)
+
+	c.IgnoreRobotsTxt = false
 
 	extensions.RandomUserAgent(c)
 
@@ -206,10 +208,13 @@ func (w *Spider) setupCollector() {
 		isRecrawl := e.Request.Ctx.Get("is_recrawl") == "true"
 
 		var pageType PageType
+		var source string
 		if strings.Contains(urlStr, "en.wikipedia.org") {
 			pageType = w.determinePageTypeWiki(urlStr)
+			source = "wikipedia"
 		} else if strings.Contains(urlStr, "theguardian.com") {
 			pageType = w.determinePageTypeGuardian(urlStr)
+			source = "theguardian"
 		} else {
 			pageType = PageTypeUnknown
 		}
@@ -220,10 +225,11 @@ func (w *Spider) setupCollector() {
 				doc := models.Document{
 					Title:         article.Title,
 					HTMLContent:   article.HTML,
-					ContentHash:   urlqueue.ComputeContentHash(article.HTML),
-					NormalizedURL: urlqueue.NormalizeURL(urlStr),
+					Source: source,
+					ContentHash:   utils.ComputeContentHash(article.HTML),
+					NormalizedURL: utils.NormalizeURL(urlStr),
 					LastScraped:   time.Now().Unix(),
-					IsValid:       true,
+					ContentLength: len(article.HTML),
 				}
 				select {
 				case w.saveChan <- &doc:
@@ -239,10 +245,15 @@ func (w *Spider) setupCollector() {
 	})
 
 	w.collector.OnError(func(r *colly.Response, err error) {
-		if r.StatusCode != 429 {
-			log.Printf("Error on %s: %v", r.Request.URL, err)
-		}
-	})
+        if err == colly.ErrRobotsTxtBlocked {
+            log.Printf("Skipped (Robots.txt): %s", r.Request.URL)
+            return
+        }
+
+        if r.StatusCode != 429 {
+            log.Printf("Error on %s: %v", r.Request.URL, err)
+        }
+    })
 }
 
 func getURLPath(href string) string {
@@ -269,7 +280,7 @@ func (w *Spider) determinePageTypeGuardian(href string) PageType {
 	}
 
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segments) >= 1 && len(segments) <= 2 {
+	if len(segments) >= 1 && len(segments) <= 3 {
 		return PageTypeCategory
 	}
 

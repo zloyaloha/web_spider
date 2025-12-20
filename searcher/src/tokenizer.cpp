@@ -35,7 +35,6 @@ std::vector<std::string> Tokenizer::getRawTokens(const std::string_view& query) 
 void Tokenizer::tokenize(const std::string_view& text) {
     tokens.clear();
     tokens.reserve(text.size() / 6);
-
     total_len = 0;
 
     std::string current_token;
@@ -43,11 +42,21 @@ void Tokenizer::tokenize(const std::string_view& text) {
 
     int dots_in_token = 0;
 
+    auto flush_token = [&]() {
+        if (!current_token.empty()) {
+            total_len += current_token.size();
+            std::string stemmed_token = stemmer->stem(current_token);
+            tokens.push_back(std::move(stemmed_token));
+            current_token.clear();
+            dots_in_token = 0;
+        }
+    };
+
     for (size_t i = 0; i < text.size(); ++i) {
         unsigned char raw_c = static_cast<unsigned char>(text[i]);
         char c = std::tolower(raw_c);
 
-        bool is_basic_char = std::isalnum(raw_c) || c == '_';
+        bool is_basic_char = std::isalnum(raw_c);
         bool should_include = false;
 
         if (c == '.' || c == ',') {
@@ -59,19 +68,6 @@ void Tokenizer::tokenize(const std::string_view& text) {
             }
         }
 
-        if (c == '-') {
-            if (current_token.empty()) {
-                if (i + 1 < text.size() && std::isdigit(static_cast<unsigned char>(text[i + 1]))) {
-                    should_include = true;
-                }
-            } else {
-                if (std::isalnum(static_cast<unsigned char>(current_token.back())) && i + 1 < text.size() &&
-                    std::isalnum(static_cast<unsigned char>(text[i + 1]))) {
-                    should_include = true;
-                }
-            }
-        }
-
         if (c == '\'') {
             if (!current_token.empty() && i + 1 < text.size() && std::isalnum(static_cast<unsigned char>(text[i + 1]))) {
                 should_include = true;
@@ -79,25 +75,23 @@ void Tokenizer::tokenize(const std::string_view& text) {
         }
 
         if (is_basic_char || should_include) {
+            if (!current_token.empty() && is_basic_char && !should_include) {
+                unsigned char last_raw = static_cast<unsigned char>(current_token.back());
+                if (std::isalnum(last_raw)) {
+                    bool last_is_digit = std::isdigit(last_raw);
+                    bool curr_is_digit = std::isdigit(raw_c);
+                    if (last_is_digit != curr_is_digit) {
+                        flush_token();
+                    }
+                }
+            }
             current_token += c;
         } else {
-            if (!current_token.empty()) {
-                total_len += current_token.size();
-
-                std::string stemmed_token = stemmer->stem(current_token);
-                tokens.push_back(std::move(stemmed_token));
-
-                current_token.clear();
-                dots_in_token = 0;
-            }
+            flush_token();
         }
     }
 
-    if (!current_token.empty()) {
-        total_len += current_token.size();
-        std::string stemmed_token = stemmer->stem(current_token);
-        tokens.push_back(std::move(stemmed_token));
-    }
+    flush_token();
 }
 
 std::vector<std::string> Tokenizer::getTokens() const { return tokens; }
@@ -106,14 +100,14 @@ size_t Tokenizer::tokensAmount() const { return tokens.size(); }
 
 double Tokenizer::avgTokenLen() const { return tokens.empty() ? 0 : double(total_len) / tokens.size(); }
 
-std::string DummyStemmer::stem(std::string& word) { return word; }
+std::string DummyStemmer::stem(std::string word) { return word; }
 
 bool PorterStemmer::isVowel(int i) const {
     if (i < 0 || i > end) return false;
     char c = word[i];
     if (c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u') return true;
     if (c == 'y') {
-        return (i == 0) || !isVowel(i - 1);
+        return (i > 0) && !isVowel(i - 1);
     }
     return false;
 }
@@ -238,8 +232,11 @@ void PorterStemmer::step1() {
         }
     }
 
-    if (end > 0 && word.back() == 'y' && !isVowel(end - 1)) {
-        word.back() = 'i';
+    if (end > 0 && word.back() == 'y') {
+        j = end - 1;
+        if (hasVowel()) {
+            word.back() = 'i';
+        }
     }
 }
 
@@ -338,7 +335,7 @@ void PorterStemmer::step5() {
     }
 }
 
-std::string PorterStemmer::stem(std::string& input_word) {
+std::string PorterStemmer::stem(std::string input_word) {
     word = std::move(input_word);
 
     end = static_cast<int>(word.length() - 1);

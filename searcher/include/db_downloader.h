@@ -25,6 +25,7 @@ private:
 public:
     DocumentDownloader(const std::string& uri, std::shared_ptr<IIndexator> indexator);
     void downloadDocuments(int max_documents = 1000000000);
+    void downloadDocumentsWithonIndexation();
     void extractText(GumboNode* node, std::string& buffer);
     void cleanText(std::string& text);
 };
