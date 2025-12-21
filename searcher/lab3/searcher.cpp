@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) {
     int limit = r["limit"].as<int>();
     std::string dump_path = r["dump"].as<std::string>();
 
-    SimpleHashMap<int> index;
+    HashMap<int> index;
     std::vector<std::string> urls;
     auto stemmer = std::make_unique<PorterStemmer>();
     auto tokenizer = std::make_shared<Tokenizer>(std::move(stemmer));
@@ -49,9 +49,8 @@ int main(int argc, char* argv[]) {
         source->dump(dump_path, zip);
         std::cout << "Индекс сдамплен!\n";
     }
-    std::cout << zip << std::endl;
     auto mapped_source = std::make_shared<MappedIndexSource>(dump_path, zip + 1);
-    TFIDFSearcher searcher(mapped_source, tokenizer);
+    BinarySearcher searcher(mapped_source, tokenizer);
     while (true) {
         std::cout << "Введите запрос: ";
         std::string request;

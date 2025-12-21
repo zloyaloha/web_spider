@@ -1,6 +1,7 @@
 #include "tokenizer.h"
 
 #include <cctype>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
@@ -45,8 +46,8 @@ void Tokenizer::tokenize(const std::string_view& text) {
     auto flush_token = [&]() {
         if (!current_token.empty()) {
             total_len += current_token.size();
-            std::string stemmed_token = stemmer->stem(current_token);
-            tokens.push_back(std::move(stemmed_token));
+            stemmer->stem(current_token);
+            tokens.push_back(current_token);
             current_token.clear();
             dots_in_token = 0;
         }
@@ -100,14 +101,18 @@ size_t Tokenizer::tokensAmount() const { return tokens.size(); }
 
 double Tokenizer::avgTokenLen() const { return tokens.empty() ? 0 : double(total_len) / tokens.size(); }
 
-std::string DummyStemmer::stem(std::string word) { return word; }
+void DummyStemmer::stem(std::string& word) { return; }
 
 bool PorterStemmer::isVowel(int i) const {
     if (i < 0 || i > end) return false;
     char c = word[i];
     if (c == 'a' || c == 'e' || c == 'i' || c == 'o' || c == 'u') return true;
+
     if (c == 'y') {
-        return (i > 0) && !isVowel(i - 1);
+        if (i == 0) return false;
+        char prev = word[i - 1];
+        bool prevIsVowel = (prev == 'a' || prev == 'e' || prev == 'i' || prev == 'o' || prev == 'u');
+        return !prevIsVowel;
     }
     return false;
 }
@@ -163,8 +168,8 @@ bool PorterStemmer::replaceSuffixIfMeasure(std::string& w, const std::string& su
     j = static_cast<int>(current_size - suffix_len - 1);
 
     if (m_condition(minM)) {
-        w.resize(current_size - suffix_len);
-        w += replacement;
+        w.replace(current_size - suffix_len, suffix_len, replacement);
+
         end = static_cast<int>(w.size() - 1);
         return true;
     }
@@ -335,12 +340,15 @@ void PorterStemmer::step5() {
     }
 }
 
-std::string PorterStemmer::stem(std::string input_word) {
+void PorterStemmer::stem(std::string& input_word) {
     word = std::move(input_word);
 
     end = static_cast<int>(word.length() - 1);
 
-    if (word.size() <= 2) return word;
+    if (word.size() <= 2) {
+        input_word = std::move(word);
+        return;
+    }
 
     step1();
     step2();
@@ -348,5 +356,5 @@ std::string PorterStemmer::stem(std::string input_word) {
     step4();
     step5();
 
-    return word;
+    input_word = std::move(word);
 }

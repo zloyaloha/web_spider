@@ -38,6 +38,16 @@ int getVarIntSize(uint32_t value) {
     return size;
 }
 
+void RamIndexSource::addUrl(std::string_view url) { urls.emplace_back(url); }
+
+void RamIndexSource::addDocument(const std::string& token, uint32_t doc_id) {
+    std::vector<TermInfo>& postings = index.get(token);
+
+    if (postings.empty() || postings.back().doc_id != doc_id) {
+        postings.push_back({doc_id, 1});
+    }
+}
+
 void RamIndexSource::dump(const std::string& filename, bool zip) {
     std::ofstream ofs(filename, std::ios::binary);
     if (!ofs) throw std::runtime_error("Cannot open file for writing");

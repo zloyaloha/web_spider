@@ -44,6 +44,7 @@ target_link_libraries(doc_searcher PUBLIC search_lib)
 add_executable(unit_tests
     tests/test_tokenizer.cpp
     tests/test_set_logic.cpp
+    tests/test_stemmer.cpp
     tests/test_indexator.cpp
     tests/test_searcher.cpp
     tests/test_mapped_index.cpp

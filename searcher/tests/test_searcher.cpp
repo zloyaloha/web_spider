@@ -17,7 +17,7 @@ TEST(SearcherTests, SingleTermReturnsMatchingUrlsInOrder) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
@@ -33,7 +33,7 @@ TEST(SearcherTests, ImplicitANDBetweenTerms) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
@@ -49,7 +49,7 @@ TEST(SearcherTests, OROperatorProducesUnion) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
@@ -65,7 +65,7 @@ TEST(SearcherTests, NOTOperatorNegatesSet) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
     idx.addDocument("http://c", "apple cherry date");
@@ -81,7 +81,7 @@ TEST(SearcherTests, ParenthesesAndPrecedenceHandling) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "a b");
     idx.addDocument("http://b", "b c");
     idx.addDocument("http://c", "a c");
@@ -102,7 +102,7 @@ TEST(SearcherTests, ComplexImplicitAndWithNot) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple");
     idx.addDocument("http://b", "apple banana");
     idx.addDocument("http://c", "banana");
@@ -118,7 +118,7 @@ TEST(SearcherTests, NonexistentTokenReturnsEmpty) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple");
 
     BinarySearcher s(src, tokenizer);
@@ -215,7 +215,7 @@ TEST(TFIDFSearcherTests, ComplexImplicitAndWithNot) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
     idx.addDocument("http://a", "apple");
     idx.addDocument("http://b", "apple banana");
     idx.addDocument("http://c", "banana");

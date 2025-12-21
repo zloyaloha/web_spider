@@ -11,7 +11,7 @@ void TFIDFIndexator::addDocument(const std::string_view& url_view, const std::st
     const std::vector<std::string>& tokens = tokenizer->getTokens();
     if (tokens.empty()) return;
 
-    SimpleHashMap<uint32_t> local_counts;
+    HashMap<uint32_t> local_counts;
 
     for (const std::string& token : tokens) {
         std::vector<uint32_t>& tf_vec = local_counts.get(token);
@@ -33,24 +33,20 @@ void TFIDFIndexator::addDocument(const std::string_view& url_view, const std::st
 IIndexator::IIndexator(std::shared_ptr<RamIndexSource> src, std::shared_ptr<Tokenizer> tok)
     : source(src), tokenizer(std::move(tok)) {}
 
-BinaryIndexator::BinaryIndexator(std::shared_ptr<RamIndexSource> src, std::shared_ptr<Tokenizer> tok)
+BooleanIndexator::BooleanIndexator(std::shared_ptr<RamIndexSource> src, std::shared_ptr<Tokenizer> tok)
     : IIndexator(src, std::move(tok)) {}
 
-void BinaryIndexator::addDocument(const std::string_view& url_view, const std::string_view& doc_view) {
+void BooleanIndexator::addDocument(const std::string_view& url_view, const std::string_view& doc_view) {
     auto ramSource = std::static_pointer_cast<RamIndexSource>(source);
 
     uint32_t doc_id = ramSource->getTotalDocs();
 
-    ramSource->urls.emplace_back(url_view);
+    ramSource->addUrl(url_view);
 
     tokenizer->tokenize(doc_view);
     std::vector<std::string> tokens = tokenizer->getTokens();
 
     for (const std::string& token : tokens) {
-        std::vector<TermInfo>& postings = ramSource->index.get(token);
-
-        if (postings.empty() || postings.back().doc_id != doc_id) {
-            postings.push_back({doc_id, 1});
-        }
+        ramSource->addDocument(token, doc_id);
     }
 }

@@ -24,14 +24,13 @@ template <typename T>
 struct HashNode {
     std::string key;
     std::vector<T> postings;
-    int document_frequency;
     std::unique_ptr<HashNode> next;
 
-    HashNode(const std::string& k) : key(k), document_frequency(0), next(nullptr) {}
+    HashNode(const std::string& k) : key(k), next(nullptr) {}
 };
 
 template <typename T>
-class SimpleHashMap {
+class HashMap {
 private:
     static const size_t BUCKET_COUNT = 100000;
 
@@ -39,7 +38,7 @@ private:
 
 public:
     std::vector<std::unique_ptr<HashNode<T>>> buckets;
-    SimpleHashMap() { buckets.resize(BUCKET_COUNT); }
+    HashMap() { buckets.resize(BUCKET_COUNT); }
 
     std::vector<T>& get(const std::string& key) {
         size_t h = getHash(key);
@@ -122,12 +121,15 @@ public:
 class RamIndexSource : public IIndexSource {
 public:
     std::vector<std::string> urls;
-    SimpleHashMap<TermInfo> index;
+    HashMap<TermInfo> index;
 
     std::vector<TermInfo> getPostings(const std::string& term) override {
         auto* node = index.getNode(term);
         return node ? node->postings : std::vector<TermInfo>{};
     }
+
+    void addUrl(std::string_view url);
+    void addDocument(const std::string& token, uint32_t doc_id);
 
     std::string getUrl(int doc_id) const override {
         if (doc_id >= 0 && doc_id < (int)urls.size()) return urls[doc_id];

@@ -13,9 +13,9 @@ public:
     virtual void addDocument(const std::string_view& url_view, const std::string_view& doc_view) = 0;
 };
 
-class BinaryIndexator : public IIndexator {
+class BooleanIndexator : public IIndexator {
 public:
-    BinaryIndexator(std::shared_ptr<RamIndexSource> src, std::shared_ptr<Tokenizer> tok);
+    BooleanIndexator(std::shared_ptr<RamIndexSource> src, std::shared_ptr<Tokenizer> tok);
     void addDocument(const std::string_view& url_view, const std::string_view& doc_view) override;
 };
 

@@ -84,7 +84,7 @@ TEST(MappedIndexSourceTests, LoadAndReadV2) {
 TEST(MappedIndexSourceTests, NonexistentTermReturnsEmpty) {
     auto src = std::make_shared<RamIndexSource>();
     auto tok = std::make_shared<Tokenizer>();
-    BinaryIndexator idx(src, tok);
+    BooleanIndexator idx(src, tok);
 
     idx.addDocument("http://a", "apple");
 
@@ -138,7 +138,7 @@ TEST(MappedIndexSourceTests, LoadAndReadV1) {
 TEST(MappedIndexSourceTests, WrongVersionThrows) {
     auto src = std::make_shared<RamIndexSource>();
     auto tok = std::make_shared<Tokenizer>();
-    BinaryIndexator idx(src, tok);
+    BooleanIndexator idx(src, tok);
 
     idx.addDocument("http://a", "apple");
 
@@ -167,7 +167,7 @@ TEST(MappedIndexSourceTests, DumpEmptyIndex) {
 TEST(MappedIndexSourceTests, DumpToDirectoryThrows) {
     auto src = std::make_shared<RamIndexSource>();
     auto tok = std::make_shared<Tokenizer>();
-    BinaryIndexator idx(src, tok);
+    BooleanIndexator idx(src, tok);
 
     idx.addDocument("http://a", "apple");
 

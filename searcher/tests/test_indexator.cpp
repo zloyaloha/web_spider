@@ -15,7 +15,7 @@ TEST(IndexatorTests, AddSingleDocument_AppendsUrlAndIndexesTokens) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
 
     const std::string url = "http://example.com/doc1";
     const std::string doc = "alpha beta gamma alpha";
@@ -45,7 +45,7 @@ TEST(IndexatorTests, AddMultipleDocuments_SharedAndDistinctTokensIndexed) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
 
     idx.addDocument("http://a", "apple banana");
     idx.addDocument("http://b", "banana cherry");
@@ -84,7 +84,7 @@ TEST(IndexatorTests, AddEmptyDocument_AddsUrlButNoTokensIndexed) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
 
     idx.addDocument("http://empty", "");
 
@@ -98,7 +98,7 @@ TEST(IndexatorTests, PunctuationSplitsTokens) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
 
     idx.addDocument("http://punc", "Hello, WORLD!");
 
@@ -123,16 +123,21 @@ TEST(IndexatorTests, HyphenApostropheAndNumbersTokenizedCorrectly) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
 
     idx.addDocument("http://mix", "well-known don't 3.14 1,234");
 
     ASSERT_EQ(src->urls.size(), 1u);
 
-    auto *hyphen = src->index.find("well-known");
+    auto *hyphen = src->index.find("well");
     ASSERT_NE(hyphen, nullptr);
     EXPECT_EQ(hyphen->size(), 1u);
     EXPECT_EQ((*hyphen)[0].doc_id, 0);
+
+    auto *known = src->index.find("known");
+    ASSERT_NE(known, nullptr);
+    EXPECT_EQ(known->size(), 1u);
+    EXPECT_EQ((*known)[0].doc_id, 0);
 
     auto *apost = src->index.find("don't");
     ASSERT_NE(apost, nullptr);
@@ -152,13 +157,13 @@ TEST(IndexatorTests, HyphenApostropheAndNumbersTokenizedCorrectly) {
 
 TEST(IndexatorTests, UsesCustomStemmerWhenProvided) {
     struct TestStemmer : public IStemmer {
-        std::string stem(std::string word) override { return word + "_stem"; }
+        void stem(std::string &word) override { word += "_stem"; }
     };
 
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>(std::make_unique<TestStemmer>());
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
 
     idx.addDocument("http://stem", "Alpha Beta");
 
@@ -179,7 +184,7 @@ TEST(IndexatorTests, DuplicateUrlBecomesSeparateDocument) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
 
     idx.addDocument("http://dup", "apple");
     idx.addDocument("http://dup", "banana");
@@ -203,7 +208,7 @@ TEST(IndexatorTests, PostingsAreAppendedInIncreasingOrder) {
     auto src = std::make_shared<RamIndexSource>();
     auto tokenizer = std::make_shared<Tokenizer>();
 
-    BinaryIndexator idx(src, tokenizer);
+    BooleanIndexator idx(src, tokenizer);
 
     idx.addDocument("http://a", "shared uniqueA");
     idx.addDocument("http://b", "other shared");
@@ -335,10 +340,15 @@ TEST(TFIDFIndexatorTests, HyphenApostropheAndNumbersTokenizedCorrectly) {
 
     ASSERT_EQ(src->urls.size(), 1u);
 
-    auto *hyphen = src->index.find("well-known");
+    auto *hyphen = src->index.find("well");
     ASSERT_NE(hyphen, nullptr);
     EXPECT_EQ(hyphen->size(), 1u);
     EXPECT_EQ((*hyphen)[0].doc_id, 0);
+
+    auto *known = src->index.find("known");
+    ASSERT_NE(known, nullptr);
+    EXPECT_EQ(known->size(), 1u);
+    EXPECT_EQ((*known)[0].doc_id, 0);
 
     auto *apost = src->index.find("don't");
     ASSERT_NE(apost, nullptr);
@@ -358,7 +368,7 @@ TEST(TFIDFIndexatorTests, HyphenApostropheAndNumbersTokenizedCorrectly) {
 
 TEST(TFIDFIndexatorTests, UsesCustomStemmerWhenProvided) {
     struct TestStemmer : public IStemmer {
-        std::string stem(std::string word) override { return word + "_stem"; }
+        void stem(std::string &word) override { word += "_stem"; }
     };
 
     auto src = std::make_shared<RamIndexSource>();

@@ -7,7 +7,7 @@
 class IStemmer {
 public:
     virtual ~IStemmer() = default;
-    virtual std::string stem(std::string word) = 0;
+    virtual void stem(std::string& word) = 0;
 };
 
 class PorterStemmer : public IStemmer {
@@ -45,13 +45,13 @@ private:
     void step5();
 
 public:
-    std::string stem(std::string input_word) override;
+    void stem(std::string& input_word) override;
     PorterStemmer() = default;
 };
 
 class DummyStemmer : public IStemmer {
 public:
-    std::string stem(std::string word) override;
+    void stem(std::string& word) override;
     ~DummyStemmer() = default;
 };
 
