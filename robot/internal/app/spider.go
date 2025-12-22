@@ -35,18 +35,6 @@ const (
 	PageTypeArticle
 )
 
-// String representation for debugging
-func (p PageType) String() string {
-	switch p {
-	case PageTypeCategory:
-		return "Category"
-	case PageTypeArticle:
-		return "Article"
-	default:
-		return "Unknown"
-	}
-}
-
 type Spider struct {
 	collector    *colly.Collector
 	db           *db.MongoDB
@@ -65,6 +53,7 @@ type Spider struct {
 
 	saveChan chan *models.Document
 	wgSave   sync.WaitGroup
+	batchWG sync.WaitGroup
 
 	doneChan chan struct{}
 }
@@ -123,28 +112,30 @@ func (w *Spider) runPhases(startURLs []string) {
 
 	fmt.Println("PHASE 1: Recrawl started...")
 
-	staleURLs, err := w.db.GetStaleDocuments(w.recrawlHours, 200)
-	if err == nil && len(staleURLs) > 0 {
-		fmt.Printf("Found %d stale pages. Processing...\n", len(staleURLs))
+	for {
+        w.waitIfPaused()
+        if w.isStopped() {
+            return
+        }
 
-		for _, u := range staleURLs {
-			w.waitIfPaused()
-			if w.isStopped() {
-				return
-			}
+        staleURLs, err := w.db.GetStaleDocuments(w.recrawlHours, 200)
+        if err != nil || len(staleURLs) == 0 {
+            fmt.Println("No more stale pages found.")
+            break
+        }
 
-			ctx := colly.NewContext()
-			ctx.Put("is_recrawl", "true")
-			ctx.Put("depth", "0")
+        for _, u := range staleURLs {
+            if w.isStopped() {
+                return
+            }
+            ctx := colly.NewContext()
+            ctx.Put("is_recrawl", "true")
 
-			w.collector.Request("GET", u, nil, ctx, nil)
-		}
-
-		w.collector.Wait()
-		fmt.Println("PHASE 1: Recrawl finished.")
-	} else {
-		fmt.Println("No stale pages found. Skipping Phase 1.")
-	}
+            w.collector.Request("GET", u, nil, ctx, nil)
+        }
+        w.collector.Wait()
+		w.batchWG.Wait()
+    }
 
 	if w.isStopped() {
 		return
@@ -231,11 +222,8 @@ func (w *Spider) setupCollector() {
 					LastScraped:   time.Now().Unix(),
 					ContentLength: len(article.HTML),
 				}
-				select {
-				case w.saveChan <- &doc:
-				default:
-					log.Println("Save queue full, dropping document")
-				}
+				w.batchWG.Add(1)
+				w.saveChan <- &doc
 			}
 		}
 
@@ -346,55 +334,81 @@ func (sc *Spider) extractContent(rawHTML string, pageURL string) (*models.Extrac
 }
 
 func (w *Spider) processLinks(e *colly.HTMLElement, currentDepth int, currentPageType PageType) {
-	if currentDepth >= w.maxDepth {
-		return
-	}
+    if currentDepth >= w.maxDepth {
+        return
+    }
 
-	currentURL := e.Request.URL
+    urlStr := e.Request.URL.String()
+    var targetSelector string
 
-	if strings.Contains(currentURL.Host, "wikipedia.org") {
-		if currentPageType == PageTypeArticle {
-			return
-		}
-	}
+    if strings.Contains(urlStr, "en.wikipedia.org") {
+        switch currentPageType {
+        case PageTypeCategory:
+            targetSelector = "#mw-pages a[href], #mw-subcategories a[href]"
+        case PageTypeArticle:
+        default:
+            return
+        }
+    } else if strings.Contains(urlStr, "theguardian.com") {
+        if currentPageType == PageTypeCategory {
+            targetSelector = "main a[data-link-name*='article'], .fc-container a[href]"
+        } else {
+            targetSelector = "article a[href]"
+        }
+    }
 
-	targetSelector := "main a[href], section a[href], .fc-container a[href], #mw-pages a[href], #mw-subcategories a[href]"
+    if targetSelector == "" {
+        return
+    }
 
-	e.ForEach(targetSelector, func(_ int, el *colly.HTMLElement) {
-		href := el.Attr("href")
-		absoluteURL := el.Request.AbsoluteURL(href)
+    e.ForEach(targetSelector, func(_ int, el *colly.HTMLElement) {
+        href := el.Attr("href")
+        absoluteURL := el.Request.AbsoluteURL(href)
 
-		u, err := url.Parse(absoluteURL)
-		if err != nil {
-			return
-		}
+        if shouldSkip(absoluteURL) {
+            return
+        }
 
-		u.RawQuery = ""
-		u.Fragment = ""
-		cleanURL := u.String()
+        u, err := url.Parse(absoluteURL)
+        if err != nil {
+            return
+        }
 
-		if _, loaded := w.visited.LoadOrStore(cleanURL, true); loaded {
-			return
-		}
+        u.RawQuery = ""
+        u.Fragment = ""
+        cleanURL := u.String()
 
-		var targetPageType PageType
-		if strings.Contains(cleanURL, "en.wikipedia.org") {
-			targetPageType = w.determinePageTypeWiki(cleanURL)
-		} else if strings.Contains(cleanURL, "theguardian.com") {
-			targetPageType = w.determinePageTypeGuardian(cleanURL)
-		} else {
-			targetPageType = PageTypeUnknown
-		}
+        if _, loaded := w.visited.LoadOrStore(cleanURL, true); loaded {
+            return
+        }
 
-		if targetPageType == PageTypeUnknown {
-			return
-		}
+        var targetType PageType
+        if strings.Contains(cleanURL, "en.wikipedia.org") {
+            targetType = w.determinePageTypeWiki(cleanURL)
+        } else {
+            targetType = w.determinePageTypeGuardian(cleanURL)
+        }
 
-		ctx := colly.NewContext()
-		ctx.Put("depth", strconv.Itoa(currentDepth+1))
+        if targetType == PageTypeUnknown {
+            return
+        }
 
-		w.collector.Request("GET", cleanURL, nil, ctx, nil)
-	})
+        ctx := colly.NewContext()
+        ctx.Put("depth", strconv.Itoa(currentDepth+1))
+        ctx.Put("is_recrawl", "false")
+
+        w.collector.Request("GET", cleanURL, nil, ctx, nil)
+    })
+}
+
+func shouldSkip(href string) bool {
+    lower := strings.ToLower(href)
+    return strings.HasPrefix(href, "#") ||
+           strings.Contains(lower, "action=edit") ||
+           strings.Contains(lower, ".jpg") ||
+           strings.Contains(lower, ".pdf") ||
+           strings.Contains(lower, "facebook.com") ||
+           strings.Contains(lower, "twitter.com")
 }
 
 func (w *Spider) cliControlLoop() {
@@ -447,8 +461,7 @@ func (w *Spider) shutdown() {
 		close(w.saveChan)
 	}
 	w.wgSave.Wait()
-	fmt.Printf("\n📊 REPORT: Scraped Pages: %d | Articles Saved: %d\n", w.pageCount, w.articleCount)
-	fmt.Println("👋 Bye!")
+	fmt.Printf("\nREPORT: Scraped Pages: %d | Articles Saved: %d\n", w.pageCount, w.articleCount)
 }
 
 func (w *Spider) startWriter() {
@@ -466,6 +479,7 @@ func (w *Spider) startWriter() {
 					fmt.Printf("Saved: %d ... \r", count)
 				}
 			}
+			w.batchWG.Done()
 		}
 	}()
 }

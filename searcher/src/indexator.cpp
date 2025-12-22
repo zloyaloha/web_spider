@@ -19,8 +19,7 @@ void TFIDFIndexator::addDocument(const std::string_view& url_view, const std::st
 
     local_counts.traverse([&](const std::string& term, const uint32_t& tf_val) {
         if (tf_val > 0) {
-            std::vector<TermInfo>& global_postings = source->index.get(term);
-            global_postings.push_back({doc_id, tf_val});
+            source->addDocument(term, doc_id, tf_val);
         }
     });
 }
@@ -32,16 +31,14 @@ BooleanIndexator::BooleanIndexator(std::shared_ptr<RamIndexSource> src, std::sha
     : IIndexator(src, std::move(tok)) {}
 
 void BooleanIndexator::addDocument(const std::string_view& url_view, const std::string_view& doc_view) {
-    auto ramSource = std::static_pointer_cast<RamIndexSource>(source);
+    uint32_t doc_id = source->getTotalDocs();
 
-    uint32_t doc_id = ramSource->getTotalDocs();
-
-    ramSource->addUrl(url_view);
+    source->addUrl(url_view);
 
     tokenizer->tokenize(doc_view);
     std::vector<std::string> tokens = tokenizer->getTokens();
 
     for (const std::string& token : tokens) {
-        ramSource->addDocument(token, doc_id);
+        source->addDocument(token, doc_id);
     }
 }

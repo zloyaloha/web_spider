@@ -278,7 +278,7 @@ TEST(Integration, FullFlow) {
     indexator.addDocument("url2", "Jumps over the lazy dog");
 
     source->dump("test.idx", true);
-    MappedIndexSource mapped("test.idx", 2);
+    MappedIndexSource mapped("test.idx");
 
     BinarySearcher searcher(std::make_shared<MappedIndexSource>(std::move(mapped)), tok);
     auto results = searcher.findDocument("quick fox");

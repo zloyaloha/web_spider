@@ -46,10 +46,13 @@ int main(int argc, char* argv[]) {
         std::chrono::duration<double> duration = end_time - start_time;
         std::cout << "Итоговое время: " << duration.count() << " сек\n";
 
+        start_time = std::chrono::high_resolution_clock::now();
         source->dump(dump_path, zip);
-        std::cout << "Индекс сдамплен!\n";
+        end_time = std::chrono::high_resolution_clock::now();
+        duration = end_time - start_time;
+        std::cout << "Индекс сдамплен за " << duration.count() << " сек!\n";
     }
-    auto mapped_source = std::make_shared<MappedIndexSource>(dump_path, zip + 1);
+    auto mapped_source = std::make_shared<MappedIndexSource>(dump_path);
     TFIDFSearcher searcher(mapped_source, tokenizer);
     while (true) {
         std::cout << "Введите запрос: ";

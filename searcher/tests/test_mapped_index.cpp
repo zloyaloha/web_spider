@@ -49,7 +49,7 @@ TEST(MappedIndexSourceTests, LoadAndReadV2) {
     std::string path = create_temp_file();
     src->dump(path, 1);
 
-    MappedIndexSource mapped(path, 2);
+    MappedIndexSource mapped(path);
     EXPECT_EQ(mapped.getTotalDocs(), 3);
     EXPECT_EQ(mapped.getUrl(0), "http://a");
     EXPECT_EQ(mapped.getUrl(1), "http://b");
@@ -72,7 +72,7 @@ TEST(MappedIndexSourceTests, LoadAndReadV2) {
     EXPECT_TRUE(found0 && found1);
 
     // also make sure searcher using mapped source works
-    auto mapped_ptr = std::make_shared<MappedIndexSource>(path, 2);
+    auto mapped_ptr = std::make_shared<MappedIndexSource>(path);
     TFIDFSearcher s(mapped_ptr, tok);
     auto res = s.findDocument("apple");
     std::vector<std::pair<std::string, double>> expected = {{"http://a", 0.}, {"http://b", 0}};
@@ -91,7 +91,7 @@ TEST(MappedIndexSourceTests, NonexistentTermReturnsEmpty) {
     std::string path = create_temp_file();
     src->dump(path, 1);
 
-    MappedIndexSource mapped(path, 2);
+    MappedIndexSource mapped(path);
     auto p = mapped.getPostings("nope");
     EXPECT_TRUE(p.empty());
 
@@ -110,7 +110,7 @@ TEST(MappedIndexSourceTests, LoadAndReadV1) {
     std::string path = create_temp_file();
     src->dump(path, 0);  // version 1
 
-    MappedIndexSource mapped(path, 1);
+    MappedIndexSource mapped(path);
     EXPECT_EQ(mapped.getTotalDocs(), 3);
     EXPECT_EQ(mapped.getUrl(0), "http://a");
     EXPECT_EQ(mapped.getUrl(1), "http://b");
@@ -135,28 +135,13 @@ TEST(MappedIndexSourceTests, LoadAndReadV1) {
     unlink(path.c_str());
 }
 
-TEST(MappedIndexSourceTests, WrongVersionThrows) {
-    auto src = std::make_shared<RamIndexSource>();
-    auto tok = std::make_shared<Tokenizer>();
-    BooleanIndexator idx(src, tok);
-
-    idx.addDocument("http://a", "apple");
-
-    std::string path = create_temp_file();
-    src->dump(path, 0);
-
-    EXPECT_THROW({ MappedIndexSource mapped(path, 2); }, std::runtime_error);
-
-    unlink(path.c_str());
-}
-
 TEST(MappedIndexSourceTests, DumpEmptyIndex) {
     auto src = std::make_shared<RamIndexSource>();
 
     std::string path = create_temp_file();
     src->dump(path, 0);
 
-    MappedIndexSource mapped(path, 1);
+    MappedIndexSource mapped(path);
     EXPECT_EQ(mapped.getTotalDocs(), 0u);
     EXPECT_EQ(mapped.getUrl(0), "");
     EXPECT_TRUE(mapped.getPostings("any").empty());

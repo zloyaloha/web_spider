@@ -100,7 +100,23 @@ public:
             }
         }
     }
+
+    uint32_t size() const {
+        int size = 0;
+        for (const auto& bucket : buckets) {
+            HashNode<T>* curr = bucket.get();
+            while (curr) {
+                ++size;
+                curr = curr->next.get();
+            }
+        }
+        return size;
+    }
 };
+
+void writeVarInt(std::ofstream& out, uint32_t value);
+int getVarIntSize(uint32_t value);
+uint32_t readVarInt(const char*& ptr);
 
 struct TermInfo {
     uint32_t doc_id;
@@ -129,7 +145,7 @@ public:
     }
 
     void addUrl(std::string_view url);
-    void addDocument(const std::string& token, uint32_t doc_id);
+    void addDocument(const std::string& token, uint32_t doc_id, uint32_t tf = 1);
 
     std::string getUrl(int doc_id) const override {
         if (doc_id >= 0 && doc_id < (int)urls.size()) return urls[doc_id];
@@ -153,10 +169,10 @@ class MappedIndexSource : public IIndexSource {
     const BinaryFormat::TermEntry* findTermEntry(const std::string& term) const;
 
 public:
-    MappedIndexSource(const std::string& filename, int expected_version) { load(filename, expected_version); }
+    MappedIndexSource(const std::string& filename) { load(filename); }
     ~MappedIndexSource();
 
-    void load(const std::string& filename, int expected_version);
+    void load(const std::string& filename);
 
     std::vector<TermInfo> getPostings(const std::string& term) override;
     std::string getUrl(int doc_id) const override;

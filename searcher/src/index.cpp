@@ -38,13 +38,25 @@ int getVarIntSize(uint32_t value) {
     return size;
 }
 
+uint32_t readVarInt(const char*& ptr) {
+    uint32_t value = 0;
+    uint32_t shift = 0;
+    while (true) {
+        uint8_t byte = *reinterpret_cast<const uint8_t*>(ptr++);
+        value |= (static_cast<uint32_t>(byte & 127) << shift);
+        if (!(byte & 128)) break;
+        shift += 7;
+    }
+    return value;
+}
+
 void RamIndexSource::addUrl(std::string_view url) { urls.emplace_back(url); }
 
-void RamIndexSource::addDocument(const std::string& token, uint32_t doc_id) {
+void RamIndexSource::addDocument(const std::string& token, uint32_t doc_id, uint32_t tf) {
     std::vector<TermInfo>& postings = index.get(token);
 
     if (postings.empty() || postings.back().doc_id != doc_id) {
-        postings.push_back({doc_id, 1});
+        postings.push_back({doc_id, tf});
     }
 }
 
@@ -52,13 +64,14 @@ void RamIndexSource::dump(const std::string& filename, bool zip) {
     std::ofstream ofs(filename, std::ios::binary);
     if (!ofs) throw std::runtime_error("Cannot open file for writing");
 
-    std::vector<std::pair<std::string, std::vector<TermInfo>>> sorted_index;
-    index.traverse([&](const std::string& term, const std::vector<TermInfo>& docs) { sorted_index.push_back({term, docs}); });
+    std::vector<std::string> terms;
+    terms.reserve(index.size());
 
-    std::sort(sorted_index.begin(), sorted_index.end(),
-              [](const auto& a, const auto& b) { return stringHash(a.first) < stringHash(b.first); });
+    index.traverse([&](const std::string& term, const auto&) { terms.push_back(term); });
 
-    BinaryFormat::Header header = {BinaryFormat::MAGIC, zip ? 2u : 1u, (uint32_t)urls.size(), (uint32_t)sorted_index.size()};
+    std::sort(terms.begin(), terms.end(), [](const auto& a, const auto& b) { return stringHash(a) < stringHash(b); });
+
+    BinaryFormat::Header header = {BinaryFormat::MAGIC, zip ? 2u : 1u, (uint32_t)urls.size(), (uint32_t)terms.size()};
     ofs.write(reinterpret_cast<char*>(&header), sizeof(header));
 
     for (const auto& url : urls) {
@@ -67,11 +80,12 @@ void RamIndexSource::dump(const std::string& filename, bool zip) {
         ofs.write(url.data(), len);
     }
 
-    uint64_t current_term_offset = (uint64_t)ofs.tellp() + (sorted_index.size() * sizeof(BinaryFormat::TermEntry));
+    uint64_t current_term_offset = (uint64_t)ofs.tellp() + (terms.size() * sizeof(BinaryFormat::TermEntry));
     uint64_t current_data_offset = current_term_offset;
-    for (const auto& [term, docs] : sorted_index) current_data_offset += term.size() + 1;
+    for (const auto& term : terms) current_data_offset += term.size() + 1;
 
-    for (const auto& [term, docs] : sorted_index) {
+    for (const auto& term : terms) {
+        const std::vector<TermInfo>& docs = index.get(term);
         BinaryFormat::TermEntry entry;
         entry.term_hash = stringHash(term);
         entry.term_offset = current_term_offset;
@@ -92,11 +106,12 @@ void RamIndexSource::dump(const std::string& filename, bool zip) {
         }
     }
 
-    for (const auto& [term, docs] : sorted_index) {
+    for (const auto& term : terms) {
         ofs.write(term.c_str(), term.size() + 1);
     }
 
-    for (const auto& [term, docs] : sorted_index) {
+    for (const auto& term : terms) {
+        const std::vector<TermInfo>& docs = index.get(term);
         uint32_t prev_id = 0;
         for (const auto& p : docs) {
             if (zip) {
@@ -124,7 +139,7 @@ MappedIndexSource::~MappedIndexSource() {
     num_terms = 0;
 }
 
-void MappedIndexSource::load(const std::string& filename, int expected_version) {
+void MappedIndexSource::load(const std::string& filename) {
     fd = open(filename.c_str(), O_RDONLY);
     if (fd == -1) throw std::runtime_error("Cannot open index file");
 
@@ -146,7 +161,12 @@ void MappedIndexSource::load(const std::string& filename, int expected_version) 
 
     auto* header = reinterpret_cast<const BinaryFormat::Header*>(map_addr);
     if (header->magic != BinaryFormat::MAGIC) throw std::runtime_error("Invalid magic");
-    if (header->version != expected_version) throw std::runtime_error("Invalid version" + std::to_string(header->version));
+
+    if (header->version == 0) {
+        std::cout << "Loading zipped version\n";
+    } else {
+        std::cout << "Loading not zipped version\n";
+    }
 
     file_version = header->version;
     num_terms = header->num_terms;
@@ -182,18 +202,6 @@ const BinaryFormat::TermEntry* MappedIndexSource::findTermEntry(const std::strin
         it++;
     }
     return nullptr;
-}
-
-uint32_t readVarInt(const char*& ptr) {
-    uint32_t value = 0;
-    uint32_t shift = 0;
-    while (true) {
-        uint8_t byte = *reinterpret_cast<const uint8_t*>(ptr++);
-        value |= (static_cast<uint32_t>(byte & 127) << shift);
-        if (!(byte & 128)) break;
-        shift += 7;
-    }
-    return value;
 }
 
 std::vector<TermInfo> MappedIndexSource::getPostings(const std::string& term) {
