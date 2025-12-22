@@ -23,10 +23,10 @@ const uint32_t MAGIC = 0xABC1234;
 template <typename T>
 struct HashNode {
     std::string key;
-    std::vector<T> postings;
+    T value;
     std::unique_ptr<HashNode> next;
 
-    HashNode(const std::string& k) : key(k), next(nullptr) {}
+    HashNode(const std::string& k) : key(k), next(nullptr), value{} {}
 };
 
 template <typename T>
@@ -40,13 +40,13 @@ public:
     std::vector<std::unique_ptr<HashNode<T>>> buckets;
     HashMap() { buckets.resize(BUCKET_COUNT); }
 
-    std::vector<T>& get(const std::string& key) {
+    T& get(const std::string& key) {
         size_t h = getHash(key);
 
         HashNode<T>* curr = buckets[h].get();
         while (curr) {
             if (curr->key == key) {
-                return curr->postings;
+                return curr->value;
             }
             curr = curr->next.get();
         }
@@ -55,7 +55,7 @@ public:
         newNode->next = std::move(buckets[h]);
         buckets[h] = std::move(newNode);
 
-        return buckets[h]->postings;
+        return buckets[h]->value;
     }
 
     HashNode<T>* getNode(const std::string& key) {
@@ -78,12 +78,12 @@ public:
         return rawPtr;
     }
 
-    std::vector<T>* find(const std::string& key) {
+    T* find(const std::string& key) {
         size_t h = getHash(key);
         HashNode<T>* curr = buckets[h].get();
         while (curr) {
             if (curr->key == key) {
-                return &curr->postings;
+                return &curr->value;
             }
             curr = curr->next.get();
         }
@@ -95,7 +95,7 @@ public:
         for (const auto& bucket : buckets) {
             HashNode<T>* curr = bucket.get();
             while (curr) {
-                callback(curr->key, curr->postings);
+                callback(curr->key, curr->value);
                 curr = curr->next.get();
             }
         }
@@ -121,11 +121,11 @@ public:
 class RamIndexSource : public IIndexSource {
 public:
     std::vector<std::string> urls;
-    HashMap<TermInfo> index;
+    HashMap<std::vector<TermInfo>> index;
 
     std::vector<TermInfo> getPostings(const std::string& term) override {
         auto* node = index.getNode(term);
-        return node ? node->postings : std::vector<TermInfo>{};
+        return node ? node->value : std::vector<TermInfo>{};
     }
 
     void addUrl(std::string_view url);

@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Индекс сдамплен!\n";
     }
     auto mapped_source = std::make_shared<MappedIndexSource>(dump_path, zip + 1);
-    BinarySearcher searcher(mapped_source, tokenizer);
+    TFIDFSearcher searcher(mapped_source, tokenizer);
     while (true) {
         std::cout << "Введите запрос: ";
         std::string request;
@@ -61,9 +61,9 @@ int main(int argc, char* argv[]) {
         auto end_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> duration = end_time - start_time;
 
-        std::cout << "Топ 5 результатов" << std::endl;
-        for (int i = 0; i < 5 && i < result.size(); ++i) {
-            std::cout << result[i].first << ' ' << result[i].second << '\n';
+        std::cout << "Топ 10 результатов" << std::endl;
+        for (int i = 0; i < 10 && i < result.size(); ++i) {
+            std::cout << "[" << i + 1 << "] " << result[i].first << " TF-IDF: " << result[i].second << '\n';
         }
         std::cout << "Время запроса: " << duration.count() << " сек\n";
         std::cout << "Количество результатов: " << result.size() << " штук\n";

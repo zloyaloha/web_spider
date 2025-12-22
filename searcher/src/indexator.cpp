@@ -14,18 +14,13 @@ void TFIDFIndexator::addDocument(const std::string_view& url_view, const std::st
     HashMap<uint32_t> local_counts;
 
     for (const std::string& token : tokens) {
-        std::vector<uint32_t>& tf_vec = local_counts.get(token);
-        if (tf_vec.empty()) {
-            tf_vec.push_back(1);
-        } else {
-            tf_vec[0]++;
-        }
+        local_counts.get(token)++;
     }
 
-    local_counts.traverse([&](const std::string& term, const std::vector<uint32_t>& tf_val) {
-        if (!tf_val.empty()) {
+    local_counts.traverse([&](const std::string& term, const uint32_t& tf_val) {
+        if (tf_val > 0) {
             std::vector<TermInfo>& global_postings = source->index.get(term);
-            global_postings.push_back({doc_id, tf_val[0]});
+            global_postings.push_back({doc_id, tf_val});
         }
     });
 }

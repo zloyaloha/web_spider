@@ -241,13 +241,12 @@ std::vector<std::pair<int, double>> TFIDFSearcher::rankResults(const std::vector
 
     for (const auto& term : terms) {
         auto postings = source->getPostings(term);
-        if (postings.empty()) continue;
 
         double idf = std::log((double)N / (1 + postings.size()));
 
         for (const auto& entry : postings) {
-            if (entry.doc_id < N && isRelevant[entry.doc_id]) {
-                scores[entry.doc_id] += (double)entry.tf * idf;
+            if (isRelevant[entry.doc_id]) {
+                scores[entry.doc_id] += (1.0 + std::log((double)entry.tf)) * idf;
             }
         }
     }
