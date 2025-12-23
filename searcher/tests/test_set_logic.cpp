@@ -2,148 +2,165 @@
 
 #include <algorithm>
 #include <chrono>
-#include <numeric>
 
 #include "searcher.h"
 
+static TermInfo T(int id, uint32_t tf = 1) {
+    TermInfo t;
+    t.doc_id = id;
+    t.tf = tf;
+    return t;
+}
+
+static std::vector<int> ids(const std::vector<TermInfo>& v) {
+    std::vector<int> res;
+    res.reserve(v.size());
+    for (const auto& t : v) res.push_back(t.doc_id);
+    return res;
+}
+
+static std::vector<TermInfo> make_range(int start, int count) {
+    std::vector<TermInfo> v;
+    v.reserve(count);
+    for (int i = 0; i < count; ++i) v.push_back(T(start + i));
+    return v;
+}
+
 class IntersectListsTest : public ::testing::Test {
 protected:
-    void CheckSorted(const std::vector<int>& v) {
+    void CheckSorted(const std::vector<TermInfo>& v) {
         for (size_t i = 1; i < v.size(); i++) {
-            EXPECT_LT(v[i - 1], v[i]) << "Vector not sorted at position " << i;
+            EXPECT_LT(v[i - 1].doc_id, v[i].doc_id) << "Vector not sorted at position " << i;
         }
     }
 };
 
 TEST_F(IntersectListsTest, BasicIntersection) {
-    std::vector<int> l1 = {1, 3, 5, 7};
-    std::vector<int> l2 = {3, 5, 9};
+    std::vector<TermInfo> l1 = {T(1), T(3), T(5), T(7)};
+    std::vector<TermInfo> l2 = {T(3), T(5), T(9)};
 
     auto result = intersect_lists(l1, l2);
 
     EXPECT_EQ(result.size(), 2);
-    EXPECT_EQ(result[0], 3);
-    EXPECT_EQ(result[1], 5);
+    EXPECT_EQ(result[0].doc_id, 3);
+    EXPECT_EQ(result[1].doc_id, 5);
     CheckSorted(result);
 }
 
 TEST_F(IntersectListsTest, NoIntersection) {
-    std::vector<int> l1 = {1, 2, 3};
-    std::vector<int> l2 = {4, 5, 6};
+    std::vector<TermInfo> l1 = {T(1), T(2), T(3)};
+    std::vector<TermInfo> l2 = {T(4), T(5), T(6)};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 0);
 }
 
 TEST_F(IntersectListsTest, EmptyFirstList) {
-    std::vector<int> l1 = {};
-    std::vector<int> l2 = {1, 2, 3};
+    std::vector<TermInfo> l1 = {};
+    std::vector<TermInfo> l2 = {T(1), T(2), T(3)};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 0);
 }
 
 TEST_F(IntersectListsTest, EmptySecondList) {
-    std::vector<int> l1 = {1, 2, 3};
-    std::vector<int> l2 = {};
+    std::vector<TermInfo> l1 = {T(1), T(2), T(3)};
+    std::vector<TermInfo> l2 = {};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 0);
 }
 
 TEST_F(IntersectListsTest, BothListsEmpty) {
-    std::vector<int> l1 = {};
-    std::vector<int> l2 = {};
+    std::vector<TermInfo> l1 = {};
+    std::vector<TermInfo> l2 = {};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 0);
 }
 
 TEST_F(IntersectListsTest, IdenticalLists) {
-    std::vector<int> l1 = {1, 2, 3, 4, 5};
-    std::vector<int> l2 = {1, 2, 3, 4, 5};
+    std::vector<TermInfo> l1 = {T(1), T(2), T(3), T(4), T(5)};
+    std::vector<TermInfo> l2 = {T(1), T(2), T(3), T(4), T(5)};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 5);
-    EXPECT_EQ(result, l1);
+    EXPECT_EQ(ids(result), ids(l1));
     CheckSorted(result);
 }
 
 TEST_F(IntersectListsTest, SingleElementIntersection) {
-    std::vector<int> l1 = {5};
-    std::vector<int> l2 = {5};
+    std::vector<TermInfo> l1 = {T(5)};
+    std::vector<TermInfo> l2 = {T(5)};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 1);
-    EXPECT_EQ(result[0], 5);
+    EXPECT_EQ(result[0].doc_id, 5);
 }
 
 TEST_F(IntersectListsTest, SingleElementNoIntersection) {
-    std::vector<int> l1 = {5};
-    std::vector<int> l2 = {3};
+    std::vector<TermInfo> l1 = {T(5)};
+    std::vector<TermInfo> l2 = {T(3)};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 0);
 }
 
 TEST_F(IntersectListsTest, OneListContainsOther) {
-    std::vector<int> l1 = {1, 2, 3, 4, 5};
-    std::vector<int> l2 = {2, 3};
+    std::vector<TermInfo> l1 = {T(1), T(2), T(3), T(4), T(5)};
+    std::vector<TermInfo> l2 = {T(2), T(3)};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 2);
-    EXPECT_EQ(result[0], 2);
-    EXPECT_EQ(result[1], 3);
+    EXPECT_EQ(result[0].doc_id, 2);
+    EXPECT_EQ(result[1].doc_id, 3);
     CheckSorted(result);
 }
 
 TEST_F(IntersectListsTest, IntersectionAtStart) {
-    std::vector<int> l1 = {1, 2, 3};
-    std::vector<int> l2 = {1, 2, 7, 8};
+    std::vector<TermInfo> l1 = {T(1), T(2), T(3)};
+    std::vector<TermInfo> l2 = {T(1), T(2), T(7), T(8)};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 2);
-    EXPECT_EQ(result[0], 1);
-    EXPECT_EQ(result[1], 2);
+    EXPECT_EQ(result[0].doc_id, 1);
+    EXPECT_EQ(result[1].doc_id, 2);
 }
 
 TEST_F(IntersectListsTest, IntersectionAtEnd) {
-    std::vector<int> l1 = {1, 2, 8, 9};
-    std::vector<int> l2 = {3, 4, 8, 9};
+    std::vector<TermInfo> l1 = {T(1), T(2), T(8), T(9)};
+    std::vector<TermInfo> l2 = {T(3), T(4), T(8), T(9)};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 2);
-    EXPECT_EQ(result[0], 8);
-    EXPECT_EQ(result[1], 9);
+    EXPECT_EQ(result[0].doc_id, 8);
+    EXPECT_EQ(result[1].doc_id, 9);
 }
 
 TEST_F(IntersectListsTest, IntersectionInMiddle) {
-    std::vector<int> l1 = {1, 5, 6, 7, 10};
-    std::vector<int> l2 = {2, 5, 6, 8};
+    std::vector<TermInfo> l1 = {T(1), T(5), T(6), T(7), T(10)};
+    std::vector<TermInfo> l2 = {T(2), T(5), T(6), T(8)};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 2);
-    EXPECT_EQ(result[0], 5);
-    EXPECT_EQ(result[1], 6);
+    EXPECT_EQ(result[0].doc_id, 5);
+    EXPECT_EQ(result[1].doc_id, 6);
 }
 
 TEST_F(IntersectListsTest, LargeListsWithFullIntersection) {
-    std::vector<int> l1(1000);
-    std::iota(l1.begin(), l1.end(), 0);  // 0, 1, 2, ..., 999
-
-    std::vector<int> l2(500);
-    std::iota(l2.begin(), l2.end(), 250);  // 250, 251, ..., 749
+    auto l1 = make_range(0, 1000);   // 0, 1, 2, ..., 999
+    auto l2 = make_range(250, 500);  // 250, 251, ..., 749
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 500);
-    EXPECT_EQ(result[0], 250);
-    EXPECT_EQ(result[499], 749);
+    EXPECT_EQ(result.front().doc_id, 250);
+    EXPECT_EQ(result.back().doc_id, 749);
     CheckSorted(result);
 }
 
 TEST_F(IntersectListsTest, LargeListsWithSparseIntersection) {
-    std::vector<int> l1 = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90};
-    std::vector<int> l2 = {15, 25, 35, 45, 55, 65, 75, 85, 95};
+    std::vector<TermInfo> l1 = {T(0), T(10), T(20), T(30), T(40), T(50), T(60), T(70), T(80), T(90)};
+    std::vector<TermInfo> l2 = {T(15), T(25), T(35), T(45), T(55), T(65), T(75), T(85), T(95)};
 
     auto result = intersect_lists(l1, l2);
     EXPECT_EQ(result.size(), 0);
@@ -151,11 +168,8 @@ TEST_F(IntersectListsTest, LargeListsWithSparseIntersection) {
 
 // Производительность
 TEST_F(IntersectListsTest, PerformanceLargeListsPerformance) {
-    std::vector<int> l1(100000);
-    std::iota(l1.begin(), l1.end(), 0);
-
-    std::vector<int> l2(100000);
-    std::iota(l2.begin(), l2.end(), 0);
+    auto l1 = make_range(0, 100000);
+    auto l2 = make_range(0, 100000);
 
     auto start = std::chrono::high_resolution_clock::now();
     auto result = intersect_lists(l1, l2);
@@ -170,35 +184,35 @@ TEST_F(IntersectListsTest, PerformanceLargeListsPerformance) {
 
 class UnionListsTest : public ::testing::Test {
 protected:
-    void CheckSorted(const std::vector<int>& v) {
+    void CheckSorted(const std::vector<TermInfo>& v) {
         for (size_t i = 1; i < v.size(); i++) {
-            EXPECT_LT(v[i - 1], v[i]) << "Vector not sorted at position " << i;
+            EXPECT_LT(v[i - 1].doc_id, v[i].doc_id) << "Vector not sorted at position " << i;
         }
     }
 
-    void CheckNoDuplicates(const std::vector<int>& v) {
+    void CheckNoDuplicates(const std::vector<TermInfo>& v) {
         for (size_t i = 1; i < v.size(); i++) {
-            EXPECT_NE(v[i - 1], v[i]) << "Duplicate found at position " << i;
+            EXPECT_NE(v[i - 1].doc_id, v[i].doc_id) << "Duplicate found at position " << i;
         }
     }
 };
 
 TEST_F(UnionListsTest, BasicUnion) {
-    std::vector<int> l1 = {1, 3, 5};
-    std::vector<int> l2 = {2, 3, 4};
+    std::vector<TermInfo> l1 = {T(1), T(3), T(5)};
+    std::vector<TermInfo> l2 = {T(2), T(3), T(4)};
 
     auto result = union_lists(l1, l2);
 
     EXPECT_EQ(result.size(), 5);
-    EXPECT_EQ(result[0], 1);
-    EXPECT_EQ(result[4], 5);
+    EXPECT_EQ(result.front().doc_id, 1);
+    EXPECT_EQ(result.back().doc_id, 5);
     CheckSorted(result);
     CheckNoDuplicates(result);
 }
 
 TEST_F(UnionListsTest, NoCommonElements) {
-    std::vector<int> l1 = {1, 3, 5};
-    std::vector<int> l2 = {2, 4, 6};
+    std::vector<TermInfo> l1 = {T(1), T(3), T(5)};
+    std::vector<TermInfo> l2 = {T(2), T(4), T(6)};
 
     auto result = union_lists(l1, l2);
 
@@ -208,84 +222,82 @@ TEST_F(UnionListsTest, NoCommonElements) {
 }
 
 TEST_F(UnionListsTest, EmptyFirstList) {
-    std::vector<int> l1 = {};
-    std::vector<int> l2 = {1, 2, 3};
+    std::vector<TermInfo> l1 = {};
+    std::vector<TermInfo> l2 = {T(1), T(2), T(3)};
 
     auto result = union_lists(l1, l2);
     EXPECT_EQ(result.size(), 3);
-    EXPECT_EQ(result, l2);
+    EXPECT_EQ(ids(result), ids(l2));
     CheckSorted(result);
 }
 
 TEST_F(UnionListsTest, EmptySecondList) {
-    std::vector<int> l1 = {1, 2, 3};
-    std::vector<int> l2 = {};
+    std::vector<TermInfo> l1 = {T(1), T(2), T(3)};
+    std::vector<TermInfo> l2 = {};
 
     auto result = union_lists(l1, l2);
     EXPECT_EQ(result.size(), 3);
-    EXPECT_EQ(result, l1);
+    EXPECT_EQ(ids(result), ids(l1));
     CheckSorted(result);
 }
 
 TEST_F(UnionListsTest, BothListsEmpty) {
-    std::vector<int> l1 = {};
-    std::vector<int> l2 = {};
+    std::vector<TermInfo> l1 = {};
+    std::vector<TermInfo> l2 = {};
 
     auto result = union_lists(l1, l2);
     EXPECT_EQ(result.size(), 0);
 }
 
 TEST_F(UnionListsTest, IdenticalLists) {
-    std::vector<int> l1 = {1, 2, 3, 4, 5};
-    std::vector<int> l2 = {1, 2, 3, 4, 5};
+    std::vector<TermInfo> l1 = {T(1), T(2), T(3), T(4), T(5)};
+    std::vector<TermInfo> l2 = {T(1), T(2), T(3), T(4), T(5)};
 
     auto result = union_lists(l1, l2);
     EXPECT_EQ(result.size(), 5);
-    EXPECT_EQ(result, l1);
+    EXPECT_EQ(ids(result), ids(l1));
     CheckSorted(result);
     CheckNoDuplicates(result);
 }
 
 TEST_F(UnionListsTest, SingleElement) {
-    std::vector<int> l1 = {5};
-    std::vector<int> l2 = {5};
+    std::vector<TermInfo> l1 = {T(5)};
+    std::vector<TermInfo> l2 = {T(5)};
 
     auto result = union_lists(l1, l2);
     EXPECT_EQ(result.size(), 1);
-    EXPECT_EQ(result[0], 5);
+    EXPECT_EQ(result[0].doc_id, 5);
 }
 
 TEST_F(UnionListsTest, OneListContainsOther) {
-    std::vector<int> l1 = {1, 2, 3, 4, 5};
-    std::vector<int> l2 = {2, 3, 4};
+    std::vector<TermInfo> l1 = {T(1), T(2), T(3), T(4), T(5)};
+    std::vector<TermInfo> l2 = {T(2), T(3), T(4)};
 
     auto result = union_lists(l1, l2);
     EXPECT_EQ(result.size(), 5);
-    EXPECT_EQ(result, l1);
+    EXPECT_EQ(ids(result), ids(l1));
     CheckSorted(result);
     CheckNoDuplicates(result);
 }
 
 TEST_F(UnionListsTest, OverlappingDifferentSizes) {
-    std::vector<int> l1 = {1, 2, 3};
-    std::vector<int> l2 = {2, 3, 4, 5, 6};
+    std::vector<TermInfo> l1 = {T(1), T(2), T(3)};
+    std::vector<TermInfo> l2 = {T(2), T(3), T(4), T(5), T(6)};
 
     auto result = union_lists(l1, l2);
     EXPECT_EQ(result.size(), 6);
     CheckSorted(result);
     CheckNoDuplicates(result);
 
+    auto result_ids = ids(result);
     for (int elem : {1, 2, 3, 4, 5, 6}) {
-        EXPECT_TRUE(std::find(result.begin(), result.end(), elem) != result.end());
+        EXPECT_TRUE(std::find(result_ids.begin(), result_ids.end(), elem) != result_ids.end());
     }
 }
 
 TEST_F(UnionListsTest, LargeListUnion) {
-    std::vector<int> l1(5000);
-    std::iota(l1.begin(), l1.end(), 0);  // 0..4999
-
-    std::vector<int> l2(5000);
-    std::iota(l2.begin(), l2.end(), 2500);  // 2500..7499
+    auto l1 = make_range(0, 5000);     // 0..4999
+    auto l2 = make_range(2500, 5000);  // 2500..7499
 
     auto result = union_lists(l1, l2);
     EXPECT_EQ(result.size(), 7500);  // 0..7499
@@ -294,11 +306,8 @@ TEST_F(UnionListsTest, LargeListUnion) {
 }
 
 TEST_F(UnionListsTest, PerformanceLargeUnion) {
-    std::vector<int> l1(100000);
-    std::iota(l1.begin(), l1.end(), 0);
-
-    std::vector<int> l2(100000);
-    std::iota(l2.begin(), l2.end(), 50000);
+    auto l1 = make_range(0, 100000);
+    auto l2 = make_range(50000, 100000);
 
     auto start = std::chrono::high_resolution_clock::now();
     auto result = union_lists(l1, l2);
@@ -314,39 +323,39 @@ TEST_F(UnionListsTest, PerformanceLargeUnion) {
 
 class NotListTest : public ::testing::Test {
 protected:
-    void CheckSorted(const std::vector<int>& v) {
+    void CheckSorted(const std::vector<TermInfo>& v) {
         for (size_t i = 1; i < v.size(); i++) {
-            EXPECT_LT(v[i - 1], v[i]) << "Vector not sorted at position " << i;
+            EXPECT_LT(v[i - 1].doc_id, v[i].doc_id) << "Vector not sorted at position " << i;
         }
     }
 };
 
 TEST_F(NotListTest, BasicNegation) {
-    std::vector<int> l = {1, 3, 5};
+    std::vector<TermInfo> l = {T(1), T(3), T(5)};
     int total_docs = 6;
 
     auto result = not_list(l, total_docs);
 
     EXPECT_EQ(result.size(), 3);
-    EXPECT_EQ(result[0], 0);
-    EXPECT_EQ(result[1], 2);
-    EXPECT_EQ(result[2], 4);
+    EXPECT_EQ(result[0].doc_id, 0);
+    EXPECT_EQ(result[1].doc_id, 2);
+    EXPECT_EQ(result[2].doc_id, 4);
     CheckSorted(result);
 }
 
 TEST_F(NotListTest, NegateEmptyList) {
-    std::vector<int> l = {};
+    std::vector<TermInfo> l = {};
     int total_docs = 5;
 
     auto result = not_list(l, total_docs);
     EXPECT_EQ(result.size(), 5);
-    EXPECT_EQ(result[0], 0);
-    EXPECT_EQ(result[4], 4);
+    EXPECT_EQ(result[0].doc_id, 0);
+    EXPECT_EQ(result[4].doc_id, 4);
     CheckSorted(result);
 }
 
 TEST_F(NotListTest, NegateAllDocuments) {
-    std::vector<int> l = {0, 1, 2, 3, 4};
+    std::vector<TermInfo> l = {T(0), T(1), T(2), T(3), T(4)};
     int total_docs = 5;
 
     auto result = not_list(l, total_docs);
@@ -354,37 +363,37 @@ TEST_F(NotListTest, NegateAllDocuments) {
 }
 
 TEST_F(NotListTest, NegateFirstElement) {
-    std::vector<int> l = {0};
+    std::vector<TermInfo> l = {T(0)};
     int total_docs = 5;
 
     auto result = not_list(l, total_docs);
     EXPECT_EQ(result.size(), 4);
-    EXPECT_EQ(result[0], 1);
-    EXPECT_EQ(result[3], 4);
+    EXPECT_EQ(result[0].doc_id, 1);
+    EXPECT_EQ(result[3].doc_id, 4);
 }
 
 TEST_F(NotListTest, NegateLastElement) {
-    std::vector<int> l = {4};
+    std::vector<TermInfo> l = {T(4)};
     int total_docs = 5;
 
     auto result = not_list(l, total_docs);
     EXPECT_EQ(result.size(), 4);
-    EXPECT_EQ(result[0], 0);
-    EXPECT_EQ(result[3], 3);
+    EXPECT_EQ(result[0].doc_id, 0);
+    EXPECT_EQ(result[3].doc_id, 3);
 }
 
 TEST_F(NotListTest, NegateMiddleElement) {
-    std::vector<int> l = {2};
+    std::vector<TermInfo> l = {T(2)};
     int total_docs = 5;
 
     auto result = not_list(l, total_docs);
     EXPECT_EQ(result.size(), 4);
     std::vector<int> expected = {0, 1, 3, 4};
-    EXPECT_EQ(result, expected);
+    EXPECT_EQ(ids(result), expected);
 }
 
 TEST_F(NotListTest, SingleDocument) {
-    std::vector<int> l = {0};
+    std::vector<TermInfo> l = {T(0)};
     int total_docs = 1;
 
     auto result = not_list(l, total_docs);
@@ -392,7 +401,7 @@ TEST_F(NotListTest, SingleDocument) {
 }
 
 TEST_F(NotListTest, NegateNonexistentDocument) {
-    std::vector<int> l = {};
+    std::vector<TermInfo> l = {};
     int total_docs = 0;
 
     auto result = not_list(l, total_docs);
@@ -400,9 +409,9 @@ TEST_F(NotListTest, NegateNonexistentDocument) {
 }
 
 TEST_F(NotListTest, LargeListNegation) {
-    std::vector<int> l;
+    std::vector<TermInfo> l;
     for (int i = 0; i < 10000; i += 2) {
-        l.push_back(i);
+        l.push_back(T(i));
     }
     int total_docs = 10000;
 
@@ -410,15 +419,15 @@ TEST_F(NotListTest, LargeListNegation) {
     EXPECT_EQ(result.size(), 5000);
 
     for (int i = 0; i < 5000; i++) {
-        EXPECT_EQ(result[i], 2 * i + 1);
+        EXPECT_EQ(result[i].doc_id, 2 * i + 1);
     }
     CheckSorted(result);
 }
 
 TEST_F(NotListTest, PerformanceLargeNegation) {
-    std::vector<int> l;
+    std::vector<TermInfo> l;
     for (int i = 0; i < 100000; i++) {
-        l.push_back(i);
+        l.push_back(T(i));
     }
     int total_docs = 100000;
 
@@ -434,16 +443,16 @@ TEST_F(NotListTest, PerformanceLargeNegation) {
 
 class BooleanAlgebraTest : public ::testing::Test {
 protected:
-    void CheckSorted(const std::vector<int>& v) {
+    void CheckSorted(const std::vector<TermInfo>& v) {
         for (size_t i = 1; i < v.size(); i++) {
-            EXPECT_LT(v[i - 1], v[i]);
+            EXPECT_LT(v[i - 1].doc_id, v[i].doc_id);
         }
     }
 };
 
 TEST_F(BooleanAlgebraTest, DeMorganFirstLaw) {
-    std::vector<int> A = {1, 3, 5};
-    std::vector<int> B = {2, 3, 4};
+    std::vector<TermInfo> A = {T(1), T(3), T(5)};
+    std::vector<TermInfo> B = {T(2), T(3), T(4)};
     int total = 6;
 
     auto and_result = intersect_lists(A, B);
@@ -453,14 +462,14 @@ TEST_F(BooleanAlgebraTest, DeMorganFirstLaw) {
     auto not_b = not_list(B, total);
     auto right = union_lists(not_a, not_b);
 
-    EXPECT_EQ(left, right);
+    EXPECT_EQ(ids(left), ids(right));
     CheckSorted(left);
     CheckSorted(right);
 }
 
 TEST_F(BooleanAlgebraTest, DeMorganSecondLaw) {
-    std::vector<int> A = {1, 3, 5};
-    std::vector<int> B = {2, 3, 4};
+    std::vector<TermInfo> A = {T(1), T(3), T(5)};
+    std::vector<TermInfo> B = {T(2), T(3), T(4)};
     int total = 6;
 
     auto or_result = union_lists(A, B);
@@ -470,59 +479,59 @@ TEST_F(BooleanAlgebraTest, DeMorganSecondLaw) {
     auto not_b = not_list(B, total);
     auto right = intersect_lists(not_a, not_b);
 
-    EXPECT_EQ(left, right);
+    EXPECT_EQ(ids(left), ids(right));
     CheckSorted(left);
 }
 
 TEST_F(BooleanAlgebraTest, AbsorptionLawOR) {
-    std::vector<int> A = {1, 3, 5, 7};
-    std::vector<int> B = {2, 3, 4, 5};
+    std::vector<TermInfo> A = {T(1), T(3), T(5), T(7)};
+    std::vector<TermInfo> B = {T(2), T(3), T(4), T(5)};
 
     auto and_result = intersect_lists(A, B);
     auto result = union_lists(A, and_result);
 
-    EXPECT_EQ(result, A);
+    EXPECT_EQ(ids(result), ids(A));
 }
 
 TEST_F(BooleanAlgebraTest, AbsorptionLawAND) {
-    std::vector<int> A = {1, 3, 5, 7};
-    std::vector<int> B = {2, 3, 4, 5};
+    std::vector<TermInfo> A = {T(1), T(3), T(5), T(7)};
+    std::vector<TermInfo> B = {T(2), T(3), T(4), T(5)};
 
     auto or_result = union_lists(A, B);
     auto result = intersect_lists(A, or_result);
 
-    EXPECT_EQ(result, A);
+    EXPECT_EQ(ids(result), ids(A));
 }
 
 TEST_F(BooleanAlgebraTest, Involution) {
-    std::vector<int> A = {1, 3, 5};
+    std::vector<TermInfo> A = {T(1), T(3), T(5)};
     int total = 6;
 
     auto not_a = not_list(A, total);
     auto not_not_a = not_list(not_a, total);
 
-    EXPECT_EQ(not_not_a, A);
+    EXPECT_EQ(ids(not_not_a), ids(A));
 }
 
 class RealWorldScenariosTest : public ::testing::Test {};
 
 TEST_F(RealWorldScenariosTest, QueryAND_B_OR_C) {
-    std::vector<int> A = {1, 2, 3, 4};
-    std::vector<int> B = {2, 3, 5, 6};
-    std::vector<int> C = {7, 8, 9};
+    std::vector<TermInfo> A = {T(1), T(2), T(3), T(4)};
+    std::vector<TermInfo> B = {T(2), T(3), T(5), T(6)};
+    std::vector<TermInfo> C = {T(7), T(8), T(9)};
 
     auto and_result = intersect_lists(A, B);
     auto final_result = union_lists(and_result, C);
 
     EXPECT_EQ(final_result.size(), 5);
-    EXPECT_EQ(final_result[0], 2);
-    EXPECT_EQ(final_result[4], 9);
+    EXPECT_EQ(final_result.front().doc_id, 2);
+    EXPECT_EQ(final_result.back().doc_id, 9);
 }
 
 TEST_F(RealWorldScenariosTest, QueryA_OR_B_AND_NOT_C) {
-    std::vector<int> A = {1, 2, 3};
-    std::vector<int> B = {3, 4, 5};
-    std::vector<int> C = {2, 4};
+    std::vector<TermInfo> A = {T(1), T(2), T(3)};
+    std::vector<TermInfo> B = {T(3), T(4), T(5)};
+    std::vector<TermInfo> C = {T(2), T(4)};
     int total = 6;
 
     auto or_result = union_lists(A, B);                     // (A | B) = {1, 2, 3, 4, 5}
@@ -530,15 +539,16 @@ TEST_F(RealWorldScenariosTest, QueryA_OR_B_AND_NOT_C) {
     auto final_result = intersect_lists(or_result, not_c);  // {1, 2, 3, 4, 5} & {0, 1, 3, 5} = {1, 3, 5}
 
     EXPECT_EQ(final_result.size(), 3);
-    EXPECT_TRUE(std::find(final_result.begin(), final_result.end(), 1) != final_result.end());
-    EXPECT_TRUE(std::find(final_result.begin(), final_result.end(), 2) == final_result.end());
-    EXPECT_TRUE(std::find(final_result.begin(), final_result.end(), 4) == final_result.end());
+    auto final_ids = ids(final_result);
+    EXPECT_TRUE(std::find(final_ids.begin(), final_ids.end(), 1) != final_ids.end());
+    EXPECT_TRUE(std::find(final_ids.begin(), final_ids.end(), 2) == final_ids.end());
+    EXPECT_TRUE(std::find(final_ids.begin(), final_ids.end(), 4) == final_ids.end());
 }
 
 TEST_F(RealWorldScenariosTest, MultipleIntersections) {
-    std::vector<int> A = {1, 2, 3, 4, 5};
-    std::vector<int> B = {2, 3, 4, 5, 6};
-    std::vector<int> C = {3, 4, 5, 6, 7};
+    std::vector<TermInfo> A = {T(1), T(2), T(3), T(4), T(5)};
+    std::vector<TermInfo> B = {T(2), T(3), T(4), T(5), T(6)};
+    std::vector<TermInfo> C = {T(3), T(4), T(5), T(6), T(7)};
 
     auto ab = intersect_lists(A, B);
     auto abc = intersect_lists(ab, C);
@@ -547,9 +557,9 @@ TEST_F(RealWorldScenariosTest, MultipleIntersections) {
 }
 
 TEST_F(RealWorldScenariosTest, MultipleUnions) {
-    std::vector<int> A = {1};
-    std::vector<int> B = {2};
-    std::vector<int> C = {3};
+    std::vector<TermInfo> A = {T(1)};
+    std::vector<TermInfo> B = {T(2)};
+    std::vector<TermInfo> C = {T(3)};
 
     auto ab = union_lists(A, B);
     auto abc = union_lists(ab, C);

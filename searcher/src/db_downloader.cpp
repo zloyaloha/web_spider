@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <unordered_map>
 
 #include "indexator.h"
 #include "tokenizer.h"
@@ -75,29 +76,26 @@ void DocumentDownloader::downloadDocuments(int max_documents) {
 }
 
 void DocumentDownloader::downloadDocumentsWithonIndexation() {
-    std::vector<Document> documents;
-    std::unordered_map<std::string, std::vector<std::string>> link2tokens;
-    auto stemmer = std::make_unique<PorterStemmer>();
+    auto stemmer = std::make_unique<DummyStemmer>();
     Tokenizer tokenizer(std::move(stemmer));
+
+    std::unordered_map<std::string, uint64_t> token2amount;
+    token2amount.reserve(3000000);
 
     auto db = client["sports_corpus"];
     auto coll = db["documents"];
-
     auto projection = document{} << "normalized_url" << 1 << "html_content" << 1 << "_id" << 0 << finalize;
-
-    int64_t count = coll.count_documents({});
-    if (count > 0) {
-        documents.reserve(static_cast<std::size_t>(count));
-    }
 
     mongocxx::options::find opts;
     opts.projection(projection.view());
-
     auto cursor = coll.find({}, opts);
 
     int counter = 0;
     uint64_t total_content_bytes = 0;
     double total_tokenize_time = 0.;
+
+    std::string content;
+    content.reserve(1024 * 100);
 
     for (auto&& doc : cursor) {
         auto url_ele = doc["normalized_url"];
@@ -105,55 +103,51 @@ void DocumentDownloader::downloadDocumentsWithonIndexation() {
 
         if (url_ele && content_ele && url_ele.type() == bsoncxx::type::k_string &&
             content_ele.type() == bsoncxx::type::k_string) {
-            std::string url = std::string(url_ele.get_string().value);
-            std::string html = std::string(content_ele.get_string().value);
-            GumboOutput* output = gumbo_parse(html.c_str());
+            auto html_view = content_ele.get_string().value;
 
-            std::string content;
-            content.reserve(html.length() / 5);
+            GumboOutput* output = gumbo_parse_with_options(&kGumboDefaultOptions, html_view.data(), html_view.length());
+
+            content.clear();
             extractText(output->root, content);
             cleanText(content);
 
             auto start_time = std::chrono::high_resolution_clock::now();
+
             tokenizer.tokenize(content);
+
             auto end_time = std::chrono::high_resolution_clock::now();
-            std::chrono::duration<double> duration = end_time - start_time;
-            total_tokenize_time += duration.count();
+            total_tokenize_time += std::chrono::duration<double>(end_time - start_time).count();
             total_content_bytes += content.size();
-            link2tokens[url] = tokenizer.getTokens();
-            std::clog << "\rDownloaded: " << counter++ << " docs";
+
+            for (const auto& token : tokenizer.getTokens()) {
+                token2amount[token]++;
+            }
+
+            if (++counter % 100 == 0) {
+                std::clog << "\rProcessed: " << counter << " docs";
+            }
+
             gumbo_destroy_output(&kGumboDefaultOptions, output);
         }
     }
-    double speed_kb_s = (total_content_bytes / 1024.0) / total_tokenize_time;
 
-    std::clog << "\nTotal tokenizing time: " << total_tokenize_time << std::endl;
-    std::clog << "Speed tokenizing: " << speed_kb_s << std::endl;
-    std::cout << "Total tokenized bytes: " << total_content_bytes / 1024.0 / 1024.0 << " MB\n";
-
-    std::map<std::string_view, uint64_t> token2amount;
-    uint64_t total_len = 0;
-    counter = 0;
-    for (const auto& [link, tokens] : link2tokens) {
-        std::clog << "\rAdded tokens from: " << counter++ << " documents";
-        for (const auto& token : tokens) {
-            auto token_iter = token2amount.find(token);
-            if (token_iter == token2amount.end()) {
-                total_len += token.size();
-                token2amount[token]++;
-            } else {
-                token_iter->second++;
-            }
-        }
+    uint64_t total_unique_len = 0;
+    for (const auto& [token, _] : token2amount) {
+        total_unique_len += token.size();
     }
 
-    std::cout << "\nAverage len: " << (double)total_len / token2amount.size() << std::endl;
-    std::cout << "Tokens amount: " << token2amount.size() << std::endl;
+    double speed_mb_s = (total_content_bytes / 1024.0 / 1024.0) / total_tokenize_time;
 
+    std::cout << "\n\n--- Statistics ---\n";
+    std::cout << "Total tokenizing time: " << total_tokenize_time << " s\n";
+    std::cout << "Speed: " << speed_mb_s << " MB/s\n";
+    std::cout << "Total tokenized: " << total_content_bytes / 1024.0 / 1024.0 << " MB\n";
+    std::cout << "Unique tokens: " << token2amount.size() << "\n";
+    std::cout << "Average token len: " << (token2amount.empty() ? 0 : (double)total_unique_len / token2amount.size()) << "\n";
+
+    std::clog << "Saving to CSV...\n";
     std::ofstream csv("../freq.csv");
-
     csv << "token;frequency\n";
-
     for (const auto& [token, amount] : token2amount) {
         csv << token << ';' << amount << '\n';
     }
@@ -170,11 +164,6 @@ void DocumentDownloader::extractText(GumboNode* node, std::string& buffer) {
         if (tag == GUMBO_TAG_SCRIPT || tag == GUMBO_TAG_STYLE || tag == GUMBO_TAG_NOSCRIPT || tag == GUMBO_TAG_IFRAME ||
             tag == GUMBO_TAG_HEAD || tag == GUMBO_TAG_TITLE) {
             return;
-        }
-
-        GumboVector* children = &node->v.element.children;
-        for (unsigned int i = 0; i < children->length; ++i) {
-            extractText(static_cast<GumboNode*>(children->data[i]), buffer);
         }
 
         switch (tag) {
@@ -201,6 +190,11 @@ void DocumentDownloader::extractText(GumboNode* node, std::string& buffer) {
                 break;
             default:
                 break;
+        }
+
+        GumboVector* children = &node->v.element.children;
+        for (unsigned int i = 0; i < children->length; ++i) {
+            extractText(static_cast<GumboNode*>(children->data[i]), buffer);
         }
     }
 }

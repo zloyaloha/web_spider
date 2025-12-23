@@ -314,7 +314,7 @@ TEST_F(PorterStemmerTokenizerTest, MixedText) {
     tokenizer->tokenize("The quickly running foxes jumped");
     auto tokens = tokenizer->getTokens();
 
-    std::vector<std::string> expected = {"th", "quickli", "run", "fox", "jump"};
+    std::vector<std::string> expected = {"the", "quickli", "run", "fox", "jump"};
     EXPECT_EQ(tokens, expected);
 }
 

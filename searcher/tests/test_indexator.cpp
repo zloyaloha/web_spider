@@ -427,7 +427,6 @@ TEST(TFIDFIndexatorTests, PostingsAreAppendedInIncreasingOrder) {
 
     auto *shared = src->index.find("shared");
     ASSERT_NE(shared, nullptr);
-    // Ensure postings contain the documents in increasing doc_id order
     std::vector<int> expected{0, 1, 2};
     std::vector<int> actual;
     for (const auto &p : *shared) actual.push_back(p.doc_id);

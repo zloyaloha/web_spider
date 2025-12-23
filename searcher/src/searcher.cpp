@@ -6,20 +6,24 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <span>
 #include <string>
 
+#include "index.h"
 #include "tokenizer.h"
 
-std::vector<int> intersect_lists(const std::vector<int>& l1, const std::vector<int>& l2) {
-    std::vector<int> res;
+std::vector<TermInfo> intersect_lists(std::span<const TermInfo> l1, std::span<const TermInfo> l2) {
+    std::vector<TermInfo> res;
     res.reserve(std::min(l1.size(), l2.size()));
     auto i1 = l1.begin(), i2 = l2.begin();
+
     while (i1 != l1.end() && i2 != l2.end()) {
-        if (*i1 < *i2)
+        if (i1->doc_id < i2->doc_id)
             i1++;
-        else if (*i2 < *i1)
+        else if (i2->doc_id < i1->doc_id)
             i2++;
         else {
             res.push_back(*i1);
@@ -30,10 +34,11 @@ std::vector<int> intersect_lists(const std::vector<int>& l1, const std::vector<i
     return res;
 }
 
-std::vector<int> union_lists(const std::vector<int>& l1, const std::vector<int>& l2) {
-    std::vector<int> res;
+std::vector<TermInfo> union_lists(std::span<const TermInfo> l1, std::span<const TermInfo> l2) {
+    std::vector<TermInfo> res;
     res.reserve(l1.size() + l2.size());
     auto i1 = l1.begin(), i2 = l2.begin();
+
     while (i1 != l1.end() || i2 != l2.end()) {
         if (i1 == l1.end()) {
             res.push_back(*i2++);
@@ -44,9 +49,9 @@ std::vector<int> union_lists(const std::vector<int>& l1, const std::vector<int>&
             continue;
         }
 
-        if (*i1 < *i2)
+        if (i1->doc_id < i2->doc_id)
             res.push_back(*i1++);
-        else if (*i2 < *i1)
+        else if (i2->doc_id < i1->doc_id)
             res.push_back(*i2++);
         else {
             res.push_back(*i1);
@@ -57,17 +62,17 @@ std::vector<int> union_lists(const std::vector<int>& l1, const std::vector<int>&
     return res;
 }
 
-std::vector<int> not_list(const std::vector<int>& l, int total_docs) {
-    std::vector<int> res;
-    res.reserve(total_docs - l.size());
+std::vector<TermInfo> not_list(std::span<const TermInfo> l, int total_docs) {
+    std::vector<TermInfo> res;
+    res.reserve(std::max(0, total_docs - (int)l.size()));
     int current_doc = 0;
     auto it = l.begin();
 
     while (current_doc < total_docs) {
-        if (it != l.end() && *it == current_doc) {
+        if (it != l.end() && it->doc_id == (uint32_t)current_doc) {
             it++;
         } else {
-            res.push_back(current_doc);
+            res.push_back({(uint32_t)current_doc, 0});
         }
         current_doc++;
     }
@@ -103,18 +108,18 @@ std::vector<std::pair<std::string, double>> ISearcher::findDocument(const std::s
 
     auto rpn = sortingStation(tokens);
 
-    auto docIds = evaluate(rpn, source->getTotalDocs());
+    auto terms_info = evaluate(rpn, source->getTotalDocs());
 
-    if (docIds.empty()) return {};
+    if (terms_info.empty()) return {};
 
-    return processResults(docIds, queryTerms);
+    return processResults(terms_info, queryTerms);
 }
 
-std::vector<int> ISearcher::evaluate(const std::vector<std::string>& rpn, int total_docs) {
-    std::vector<std::vector<int>> stack;
+std::vector<TermInfo> ISearcher::evaluate(const std::vector<std::string>& rpn, int total_docs) {
+    std::vector<std::vector<TermInfo>> stack;
     for (const auto& token : rpn) {
         if (!isOperator(token)) {
-            stack.push_back(fetchDocIds(token));
+            stack.push_back(source->getPostings(token));
         } else {
             if (token == "!") {
                 if (stack.empty()) continue;
@@ -134,7 +139,7 @@ std::vector<int> ISearcher::evaluate(const std::vector<std::string>& rpn, int to
             }
         }
     }
-    return stack.empty() ? std::vector<int>{} : stack.back();
+    return stack.empty() ? std::vector<TermInfo>{} : stack.back();
 }
 
 std::vector<std::string> ISearcher::parseQuery(const std::string& query) {
@@ -201,27 +206,15 @@ std::vector<std::string> ISearcher::sortingStation(const std::vector<std::string
     return outputQueue;
 }
 
-std::vector<int> ISearcher::fetchDocIds(const std::string& term) {
-    std::vector<TermInfo> postings = source->getPostings(term);
-
-    std::vector<int> ids;
-    ids.reserve(postings.size());
-
-    for (const auto& entry : postings) {
-        ids.push_back(entry.doc_id);
-    }
-    return ids;
-}
-
 BinarySearcher::BinarySearcher(std::shared_ptr<IIndexSource> src, std::shared_ptr<Tokenizer> tok) : ISearcher(src, tok) {}
 
-std::vector<std::pair<std::string, double>> BinarySearcher::processResults(const std::vector<int>& docIds,
+std::vector<std::pair<std::string, double>> BinarySearcher::processResults(const std::vector<TermInfo>& terms_info,
                                                                            const std::vector<std::string>& terms) {
     std::vector<std::pair<std::string, double>> result_urls;
-    result_urls.reserve(docIds.size());
+    result_urls.reserve(terms_info.size());
 
-    for (int id : docIds) {
-        std::string url = source->getUrl(id);
+    for (const auto& term_info : terms_info) {
+        std::string url = source->getUrl(term_info.doc_id);
         if (!url.empty()) {
             result_urls.push_back({url, 0.});
         }
@@ -231,13 +224,13 @@ std::vector<std::pair<std::string, double>> BinarySearcher::processResults(const
 
 TFIDFSearcher::TFIDFSearcher(std::shared_ptr<IIndexSource> src, std::shared_ptr<Tokenizer> tok) : ISearcher(src, tok) {}
 
-std::vector<std::pair<int, double>> TFIDFSearcher::rankResults(const std::vector<int>& doc_ids,
+std::vector<std::pair<int, double>> TFIDFSearcher::rankResults(const std::vector<TermInfo>& terms_info,
                                                                const std::vector<std::string>& terms) {
     int N = source->getTotalDocs();
-    std::vector<double> scores(N, 0.0);
+    HashMap<uint32_t, double> scores;
 
     std::vector<bool> isRelevant(N, false);
-    for (int id : doc_ids) isRelevant[id] = true;
+    for (const auto& term_info : terms_info) isRelevant[term_info.doc_id] = true;
 
     for (const auto& term : terms) {
         auto postings = source->getPostings(term);
@@ -246,23 +239,23 @@ std::vector<std::pair<int, double>> TFIDFSearcher::rankResults(const std::vector
 
         for (const auto& entry : postings) {
             if (isRelevant[entry.doc_id]) {
-                scores[entry.doc_id] += (1.0 + std::log((double)entry.tf)) * idf;
+                scores.get(entry.doc_id) += (1.0 + std::log((double)entry.tf)) * idf;
             }
         }
     }
 
     std::vector<std::pair<int, double>> ranked;
-    for (int id : doc_ids) {
-        ranked.push_back({id, scores[id]});
+    for (const auto& term_info : terms_info) {
+        ranked.push_back({term_info.doc_id, scores.get(term_info.doc_id)});
     }
 
     std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
     return ranked;
 }
 
-std::vector<std::pair<std::string, double>> TFIDFSearcher::processResults(const std::vector<int>& docIds,
+std::vector<std::pair<std::string, double>> TFIDFSearcher::processResults(const std::vector<TermInfo>& terms_info,
                                                                           const std::vector<std::string>& terms) {
-    auto ranked = rankResults(docIds, terms);
+    auto ranked = rankResults(terms_info, terms);
 
     std::vector<std::pair<std::string, double>> result_urls;
     for (const auto& pair : ranked) {

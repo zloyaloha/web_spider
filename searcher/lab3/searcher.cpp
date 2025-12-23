@@ -29,7 +29,6 @@ int main(int argc, char* argv[]) {
     int limit = r["limit"].as<int>();
     std::string dump_path = r["dump"].as<std::string>();
 
-    HashMap<int> index;
     std::vector<std::string> urls;
     auto stemmer = std::make_unique<PorterStemmer>();
     auto tokenizer = std::make_shared<Tokenizer>(std::move(stemmer));
@@ -39,23 +38,23 @@ int main(int argc, char* argv[]) {
         mongocxx::instance inst{};
         DocumentDownloader downloader("mongodb://localhost:27017", indexator);
 
-        std::cout << "Начал загрузку документов\n";
+        std::cout << "Started downloading documents\n";
         auto start_time = std::chrono::high_resolution_clock::now();
         downloader.downloadDocuments(limit);
         auto end_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> duration = end_time - start_time;
-        std::cout << "Итоговое время: " << duration.count() << " сек\n";
+        std::cout << "Total time: " << duration.count() << " sec\n";
 
         start_time = std::chrono::high_resolution_clock::now();
         source->dump(dump_path, zip);
         end_time = std::chrono::high_resolution_clock::now();
         duration = end_time - start_time;
-        std::cout << "Индекс сдамплен за " << duration.count() << " сек!\n";
+        std::cout << "Index dumped in " << duration.count() << " sec!\n";
     }
     auto mapped_source = std::make_shared<MappedIndexSource>(dump_path);
     TFIDFSearcher searcher(mapped_source, tokenizer);
     while (true) {
-        std::cout << "Введите запрос: ";
+        std::cout << "Enter query: ";
         std::string request;
         std::getline(std::cin, request);
 
@@ -64,11 +63,11 @@ int main(int argc, char* argv[]) {
         auto end_time = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> duration = end_time - start_time;
 
-        std::cout << "Топ 10 результатов" << std::endl;
+        std::cout << "Top 10 results" << std::endl;
         for (int i = 0; i < 10 && i < result.size(); ++i) {
             std::cout << "[" << i + 1 << "] " << result[i].first << " TF-IDF: " << result[i].second << '\n';
         }
-        std::cout << "Время запроса: " << duration.count() << " сек\n";
-        std::cout << "Количество результатов: " << result.size() << " штук\n";
+        std::cout << "Query time: " << duration.count() << " sec\n";
+        std::cout << "Number of results: " << result.size() << " items\n";
     }
 }

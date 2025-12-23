@@ -46,8 +46,17 @@ void Tokenizer::tokenize(const std::string_view& text) {
     auto flush_token = [&]() {
         if (!current_token.empty()) {
             total_len += current_token.size();
+
             stemmer->stem(current_token);
-            tokens.push_back(current_token);
+
+            while (!current_token.empty() && current_token.back() == '\'') {
+                current_token.pop_back();
+            }
+
+            if (!current_token.empty()) {
+                tokens.push_back(current_token);
+            }
+
             current_token.clear();
             dots_in_token = 0;
         }
@@ -118,23 +127,20 @@ bool PorterStemmer::isVowel(int i) const {
 }
 
 int PorterStemmer::getMeasure(int limit) const {
-    int measure = 0;
-    bool vc = false;
+    int m = 0;
+    bool prevVowel = false;
 
     for (int i = 0; i <= limit; ++i) {
-        if (isVowel(i)) {
-            vc = false;
-        } else {
-            if (!vc) {
-                ++measure;
-                vc = true;
-            }
+        bool currVowel = isVowel(i);
+        if (!currVowel && prevVowel) {
+            ++m;
         }
+        prevVowel = currVowel;
     }
-    return measure;
+    return m;
 }
 
-bool PorterStemmer::m_condition(int minM) const { return getMeasure(j) > minM; }
+bool PorterStemmer::m_condition(int minM) const { return getMeasure(j) >= minM; }
 
 bool PorterStemmer::hasVowel() const {
     for (int i = 0; i <= j; ++i) {

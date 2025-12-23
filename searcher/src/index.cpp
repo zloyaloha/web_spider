@@ -10,6 +10,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <span>
 #include <string_view>
 
 uint32_t stringHash(std::string_view str) {
@@ -67,7 +68,12 @@ void RamIndexSource::dump(const std::string& filename, bool zip) {
     std::vector<std::string> terms;
     terms.reserve(index.size());
 
-    index.traverse([&](const std::string& term, const auto&) { terms.push_back(term); });
+    index.traverse([&](const std::string& term, const std::vector<TermInfo>& docs) {
+        if (docs.size() > 1 ||
+            docs[0].tf > 1) {  // удалим токены, которые встречаются один раз в одном документе. вероятно, это опечатка.
+            terms.push_back(term);
+        }
+    });
 
     std::sort(terms.begin(), terms.end(), [](const auto& a, const auto& b) { return stringHash(a) < stringHash(b); });
 
@@ -162,9 +168,9 @@ void MappedIndexSource::load(const std::string& filename) {
     auto* header = reinterpret_cast<const BinaryFormat::Header*>(map_addr);
     if (header->magic != BinaryFormat::MAGIC) throw std::runtime_error("Invalid magic");
 
-    if (header->version == 0) {
+    if (header->version == 2) {
         std::cout << "Loading zipped version\n";
-    } else {
+    } else if (header->version == 1) {
         std::cout << "Loading not zipped version\n";
     }
 
@@ -184,7 +190,7 @@ void MappedIndexSource::load(const std::string& filename) {
     term_directory = reinterpret_cast<const BinaryFormat::TermEntry*>(ptr);
 }
 
-const BinaryFormat::TermEntry* MappedIndexSource::findTermEntry(const std::string& term) const {
+const BinaryFormat::TermEntry* MappedIndexSource::findTermEntry(std::string_view term) const {
     if (!term_directory || num_terms == 0 || !map_addr) return nullptr;
 
     size_t h = stringHash(term);
@@ -193,8 +199,8 @@ const BinaryFormat::TermEntry* MappedIndexSource::findTermEntry(const std::strin
                                [](const BinaryFormat::TermEntry& entry, size_t val) { return entry.term_hash < val; });
 
     while (it != term_directory + num_terms && it->term_hash == h) {
-        const char* stored_term = map_addr + it->term_offset;
-        std::string_view stored_view(stored_term);
+        const char* stored_term_ptr = map_addr + it->term_offset;
+        std::string_view stored_view(stored_term_ptr);
 
         if (stored_view == term) {
             return it;
@@ -205,33 +211,40 @@ const BinaryFormat::TermEntry* MappedIndexSource::findTermEntry(const std::strin
 }
 
 std::vector<TermInfo> MappedIndexSource::getPostings(const std::string& term) {
-    const auto* entry = findTermEntry(term);
+    const auto* entry = findTermEntry(std::string_view(term));
     if (!entry) return {};
 
-    std::vector<TermInfo> results;
-    results.reserve(entry->doc_count);
-
     const char* data_ptr = map_addr + entry->data_offset;
-    uint32_t last_doc_id = 0;
-    for (uint32_t i = 0; i < entry->doc_count; ++i) {
-        if (file_version == 1) {
-            uint32_t doc_id = *reinterpret_cast<const uint32_t*>(data_ptr);
-            uint32_t tf = *reinterpret_cast<const uint32_t*>(data_ptr + sizeof(int));
-            results.push_back(TermInfo{static_cast<uint32_t>(doc_id), static_cast<uint32_t>(tf)});
-            data_ptr += sizeof(int) * 2;
-        } else {
-            uint32_t delta = readVarInt(data_ptr);
-            uint32_t current_doc_id = last_doc_id + delta;
 
-            uint32_t tf = readVarInt(data_ptr);
+    if (file_version == 1) {
+        std::vector<TermInfo> results;
+        results.reserve(entry->doc_count);
+
+        auto* raw_data = reinterpret_cast<const TermInfo*>(data_ptr);
+
+        std::span<const TermInfo> disk_span(raw_data, entry->doc_count);
+
+        for (const auto& disk_entry : disk_span) {
+            results.push_back({disk_entry.doc_id, disk_entry.tf});
+        }
+        return results;
+    } else {
+        std::vector<TermInfo> results;
+        results.reserve(entry->doc_count);
+
+        uint32_t last_doc_id = 0;
+        const char* ptr = data_ptr;
+
+        for (uint32_t i = 0; i < entry->doc_count; ++i) {
+            uint32_t delta = readVarInt(ptr);
+            uint32_t current_doc_id = last_doc_id + delta;
+            uint32_t tf = readVarInt(ptr);
 
             results.push_back({current_doc_id, tf});
-
             last_doc_id = current_doc_id;
         }
+        return results;
     }
-
-    return results;
 }
 
 std::string MappedIndexSource::getUrl(int doc_id) const {

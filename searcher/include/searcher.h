@@ -1,14 +1,15 @@
 #pragma once
 #include <cstdlib>
 #include <cstring>
+#include <span>
 #include <vector>
 
 #include "index.h"
 #include "tokenizer.h"
 
-std::vector<int> intersect_lists(const std::vector<int>& l1, const std::vector<int>& l2);
-std::vector<int> union_lists(const std::vector<int>& l1, const std::vector<int>& l2);
-std::vector<int> not_list(const std::vector<int>& l, int total_docs);
+std::vector<TermInfo> intersect_lists(std::span<const TermInfo> l1, std::span<const TermInfo> l2);
+std::vector<TermInfo> union_lists(std::span<const TermInfo> l1, std::span<const TermInfo> l2);
+std::vector<TermInfo> not_list(std::span<const TermInfo> l, int total_docs);
 
 class ISearcher {
 protected:
@@ -23,10 +24,9 @@ public:
 protected:
     int getPriority(const std::string& op);
     bool isOperator(const std::string& token);
-    std::vector<int> evaluate(const std::vector<std::string>& tokens, int total_docs);
+    std::vector<TermInfo> evaluate(const std::vector<std::string>& tokens, int total_docs);
 
-    std::vector<int> fetchDocIds(const std::string& term);
-    virtual std::vector<std::pair<std::string, double>> processResults(const std::vector<int>& docIds,
+    virtual std::vector<std::pair<std::string, double>> processResults(const std::vector<TermInfo>& docIds,
                                                                        const std::vector<std::string>& terms) = 0;
 
     std::vector<std::string> parseQuery(const std::string& query);
@@ -38,7 +38,7 @@ public:
     BinarySearcher(std::shared_ptr<IIndexSource> src, std::shared_ptr<Tokenizer> tok);
 
 private:
-    std::vector<std::pair<std::string, double>> processResults(const std::vector<int>& docIds,
+    std::vector<std::pair<std::string, double>> processResults(const std::vector<TermInfo>& docIds,
                                                                const std::vector<std::string>& terms) override;
 };
 
@@ -47,7 +47,7 @@ public:
     TFIDFSearcher(std::shared_ptr<IIndexSource> src, std::shared_ptr<Tokenizer> tok);
 
 private:
-    std::vector<std::pair<int, double>> rankResults(const std::vector<int>& doc_ids, const std::vector<std::string>& terms);
-    std::vector<std::pair<std::string, double>> processResults(const std::vector<int>& docIds,
+    std::vector<std::pair<int, double>> rankResults(const std::vector<TermInfo>& doc_ids, const std::vector<std::string>& terms);
+    std::vector<std::pair<std::string, double>> processResults(const std::vector<TermInfo>& docIds,
                                                                const std::vector<std::string>& terms) override;
 };

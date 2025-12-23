@@ -11,7 +11,7 @@ void TFIDFIndexator::addDocument(const std::string_view& url_view, const std::st
     const std::vector<std::string>& tokens = tokenizer->getTokens();
     if (tokens.empty()) return;
 
-    HashMap<uint32_t> local_counts;
+    HashMap<std::string, uint32_t> local_counts;
 
     for (const std::string& token : tokens) {
         local_counts.get(token)++;
