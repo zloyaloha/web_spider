@@ -69,8 +69,7 @@ void RamIndexSource::dump(const std::string& filename, bool zip) {
     terms.reserve(index.size());
 
     index.traverse([&](const std::string& term, const std::vector<TermInfo>& docs) {
-        if (docs.size() > 1 ||
-            docs[0].tf > 1) {  // удалим токены, которые встречаются один раз в одном документе. вероятно, это опечатка.
+        if ((docs.size() > 1 || docs[0].tf > 1) && (docs.size() < 0.95 * urls.size())) {
             terms.push_back(term);
         }
     });
